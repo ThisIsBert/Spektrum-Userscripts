@@ -80,8 +80,8 @@
         <article class="card">
           <p class="where">Spektrum · CMS-Artikelvorschau</p>
           <h3>Autorenansicht exportieren</h3>
-          <p>Speichert eine kommentierbare HTML-Datei mit hellem Layout und Schrift. Bilder lassen sich wahlweise einbetten. Mit Antworten, erneutem HTML-Speichern und PDF-Druckansicht.</p>
-          <p class="usage">Im CMS »Bilder einbetten« wählen und »Autorenansicht speichern« anklicken. Empfänger markieren Text, kommentieren und senden die neu gespeicherte HTML-Datei zurück. Zum Lesen und Kommentieren ist kein Userscript nötig.</p>
+          <p>Exportiert die Artikelvorschau als HTML-Datei zum Gegenlesen: Textstellen markieren, kommentieren und auf Kommentare antworten. Beim Bewegen des Mauszeigers über eine Markierung erscheinen die Kommentartexte samt Namen und Antworten.</p>
+          <p class="usage">Mit »Bilder einbetten« auch offline lesen. Die kommentierte Fassung als neue HTML-Datei zurücksenden oder über »Als PDF speichern« drucken. Empfänger benötigen weder CMS-Zugang noch Tampermonkey. <a href="#autorenansicht-hilfe">So funktioniert die Autorenansicht.</a></p>
           <div class="actions"><a class="install" aria-label="Autorenansicht exportieren installieren" href="https://raw.githubusercontent.com/ThisIsBert/Spektrum-Userscripts/main/spektrum-autorenansicht.user.js">Skript installieren ↗</a><a href="https://github.com/ThisIsBert/Spektrum-Userscripts/blob/main/spektrum-autorenansicht.user.js">Quellcode</a></div>
         </article>
         <article class="card">
@@ -103,6 +103,13 @@
       </ol>
     </section>
     <section class="help" aria-label="Updates und Hilfe">
+      <details id="autorenansicht-hilfe"><summary>Wie funktioniert das Gegenlesen mit der Autorenansicht?</summary>
+        <p><strong>Exportieren:</strong> Im CMS die Artikelvorschau öffnen. Die Checkbox »Bilder einbetten« ist standardmäßig angehakt: Bilder werden in der HTML-Datei gespeichert und sind offline verfügbar. Ohne Häkchen bleibt die Datei kleiner; Bilder werden beim Öffnen online nachgeladen. Dann »Autorenansicht speichern« anklicken und die Datei weitergeben.</p>
+        <p><strong>Kommentieren:</strong> Die HTML-Datei herunterladen und im Browser öffnen. Eine Textstelle markieren, »Kommentar hinzufügen« wählen, optional den eigenen Namen eingeben und mit »Hinzufügen« übernehmen. Über »Antworten« lassen sich Rückfragen ergänzen. Beim Mouseover über eine Markierung werden die zugehörigen Kommentare und Antworten angezeigt.</p>
+        <p><strong>Zurücksenden:</strong> »Kommentierte Fassung speichern« erzeugt eine neue HTML-Datei mit allen Kommentaren, Antworten und Markierungen. Diese neue Datei zurücksenden. Die ursprünglich geöffnete Datei wird nicht überschrieben; Änderungen werden nicht automatisch gespeichert. Zum Lesen und Kommentieren sind weder ein Konto noch CMS-Zugang oder Tampermonkey nötig.</p>
+        <p><strong>PDF:</strong> »Als PDF speichern« öffnet den Druckdialog des Browsers. Dort das PDF-Ziel auswählen. Alle Galeriebilder und eine Kommentarliste mit den zitierten Textstellen am Artikelende werden ausgegeben. Mouseover und weitere Kommentarbearbeitung bleiben Funktionen der HTML-Datei.</p>
+        <p><strong>Eingebettete Medien:</strong> Interaktive Karten, Videos und Audio werden in der Autorenansicht durch Hinweise mit Links zum Original ersetzt. Bereits exportierte HTML-Dateien erhalten spätere Skript-Updates nicht automatisch.</p>
+      </details>
       <details open><summary>Wie kommen neue Versionen zu mir?</summary><p>Die Skripte enthalten feste Update-Adressen zu diesem GitHub-Repo. Bei aktivierter Update-Prüfung sucht Tampermonkey regelmäßig nach neueren Versionen. Eine Prüfung lässt sich auch im Tampermonkey-Dashboard anstoßen. Wann geprüft und ob eine Bestätigung verlangt wird, hängt von den Einstellungen und möglichen neuen Berechtigungen ab.</p></details>
       <details><summary>Ich habe eines der Skripte schon manuell installiert.</summary><p>Einmal den passenden Installationsknopf auf dieser Seite verwenden und die Aktualisierung bestätigen. Name und Namensraum der Skripte sind unverändert, damit Tampermonkey die vorhandene Installation zuordnen kann. Falls dennoch zwei Einträge entstehen, die alte Kopie deaktivieren. Eigene Änderungen am Skript vorher sichern.</p></details>
       <details><summary>Ich sehe nur Code oder das Skript startet nicht.</summary><p>Prüfen, ob Tampermonkey installiert und aktiviert ist. Falls der Installationslink nur Code zeigt: Den Link über »Link-Adresse kopieren« kopieren und im Tampermonkey-Dashboard unter »Hilfsmittel / Utilities« mit »Von URL installieren / Install from URL« öffnen. Bei Chrome und Edge zusätzlich den <a href="https://www.tampermonkey.net/faq.php#Q209">Tampermonkey-Hinweis zur Freigabe von Userscripts</a> beachten. Das Skript muss aktiviert sein und die Erweiterung Zugriff auf die betreffende Website haben. Anschließend die Zielseite neu laden.</p></details>
