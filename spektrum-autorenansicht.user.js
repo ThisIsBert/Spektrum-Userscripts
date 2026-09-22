@@ -1,11 +1,15 @@
 // ==UserScript==
 // @name         Spektrum CMS – Autorenansicht exportieren
 // @namespace    https://www.spektrum.de/
-// @version      0.2.0
+// @version      0.2.1
 // @description  Exportiert eine Spektrum-Artikelvorschau als einzelne HTML-Datei im Light Mode.
 // @match        https://www.spektrum.de/sixcms/detail.php*
 // @grant        GM_xmlhttpRequest
 // @connect      static.spektrum.de
+// @homepageURL  https://thisisbert.github.io/Spektrum-Userscripts/
+// @supportURL   https://github.com/ThisIsBert/Spektrum-Userscripts/issues
+// @updateURL    https://raw.githubusercontent.com/ThisIsBert/Spektrum-Userscripts/main/spektrum-autorenansicht.user.js
+// @downloadURL  https://raw.githubusercontent.com/ThisIsBert/Spektrum-Userscripts/main/spektrum-autorenansicht.user.js
 // ==/UserScript==
 
 (function () {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bildnachweis kopieren
 // @namespace    https://www.spektrum.de/
-// @version      1.0.1
+// @version      1.0.2
 // @description  Kopiert Bildnachweise von Getty Images, Adobe Stock und Picture Alliance in ein einheitliches Format.
 // @author       Jan
 // @include      *://gettyimages.*/*
@@ -13,6 +13,10 @@
 // @match        *://*.picture-alliance.de/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
+// @homepageURL  https://thisisbert.github.io/Spektrum-Userscripts/
+// @supportURL   https://github.com/ThisIsBert/Spektrum-Userscripts/issues
+// @updateURL    https://raw.githubusercontent.com/ThisIsBert/Spektrum-Userscripts/main/bildnachweis-kopieren.user.js
+// @downloadURL  https://raw.githubusercontent.com/ThisIsBert/Spektrum-Userscripts/main/bildnachweis-kopieren.user.js
 // ==/UserScript==
 
 (function () {

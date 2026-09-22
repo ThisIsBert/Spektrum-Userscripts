@@ -1,11 +1,15 @@
 // ==UserScript==
 // @name         Nature: Artikel-Dashboard
 // @namespace    https://www.nature.com/
-// @version      2.1.1
+// @version      2.1.2
 // @description  Kopiert Artikeltext, Übersetzungsquelle und alphabetisch sortierte References im Spektrum-Format.
 // @match        https://www.nature.com/articles/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
+// @homepageURL  https://thisisbert.github.io/Spektrum-Userscripts/
+// @supportURL   https://github.com/ThisIsBert/Spektrum-Userscripts/issues
+// @updateURL    https://raw.githubusercontent.com/ThisIsBert/Spektrum-Userscripts/main/nature-artikel-dashboard.user.js
+// @downloadURL  https://raw.githubusercontent.com/ThisIsBert/Spektrum-Userscripts/main/nature-artikel-dashboard.user.js
 // ==/UserScript==
 
 (function () {

@@ -1,13 +1,17 @@
 // ==UserScript==
 // @name         Spektrum SixCMS – Bilder-Batch (Zwei-Tab)
 // @namespace    https://www.spektrum.de/
-// @version      0.2.5
+// @version      0.2.6
 // @description  Legt mehrere Bilder nacheinander in SixCMS an; Eingabe erfolgt in einem separaten, CMS-freien Tab.
 // @author       Jan Dönges / OpenAI
 // @match        https://www.spektrum.de/sixcms/admin/content/*
 // @run-at       document-idle
 // @noframes
 // @grant        none
+// @homepageURL  https://thisisbert.github.io/Spektrum-Userscripts/
+// @supportURL   https://github.com/ThisIsBert/Spektrum-Userscripts/issues
+// @updateURL    https://raw.githubusercontent.com/ThisIsBert/Spektrum-Userscripts/main/spektrum-bilder-batch.user.js
+// @downloadURL  https://raw.githubusercontent.com/ThisIsBert/Spektrum-Userscripts/main/spektrum-bilder-batch.user.js
 // ==/UserScript==
 (() => { 'use strict'; const PREFIX = '[SDW SixCMS Batch]'; const CONFIG = Object.freeze({ areaId: '912', listFrameSelector: '#id6AdminFrameListFrame', detailFrameSelector: '#id6AdminFrameDetailFrame', newButtonSelector: '#id6AdminShortCutListNew', newFormSelector: '#id6AdminForm_myform', saveButtonSelector: '.cs6AdminButtonSave', launcherId: 'sdw-sixcms-batch-launcher', popupName: 'sdwSixCmsImageBatch', openFormAttemptTimeoutMs: 3_000, openFormAttempts: 3, openFormFallbackTimeoutMs: 5_000, saveTimeoutMs: 180_000, tinyMceTimeoutMs: 15_000, pollIntervalMs: 150, uiMonitorIntervalMs: 1_000, }); const RIGHTS = Object.freeze({ '1': '1722160', '2': '1722162', '3': '1722164', '4': '1722166', '5': '1722168', '7': '1722170', }); const FIELD_SELECTORS = Object.freeze({ title: '[name="input[title]"]', file: 'input[type="file"][name="input[datei]"]', caption: 'textarea[name="input[text]"]', altLabel: '[name="input[altlabel]"]', keywords: '[name="input[keywords]"]', comment: '[name="input[kommentar]"]', copyright: '[name="input[copyright]"]', rights: 'select[name="input[bildrechte]"]', }); if (!isTargetPage()) { return; } let batchWindow = null; let channelId = ''; let uiMonitorTimer = null; let batchUiReady = false; const runner = createBatchRunner(); init(); function init() { if (document.getElementById(CONFIG.launcherId)) { return; } injectLauncher(); window.addEventListener('message', handleBatchWindowMessage); window.addEventListener('beforeunload', handleCmsUnload); log('Initialisiert.', { areaId: CONFIG.areaId, listFrameFound: Boolean(getListFrame()), detailFrameFound: Boolean(getDetailFrame()), }); } function isTargetPage() { return ( window.top === window.self && location.pathname.startsWith('/sixcms/admin/content/') && new URLSearchParams(location.search).get('area_id') === CONFIG.areaId ); } // ---------------------------------------------------------------------
 // UI-LAUNCHER / ZWEI-TAB-KOMMUNIKATION
