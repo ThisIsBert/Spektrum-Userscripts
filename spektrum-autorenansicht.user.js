@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spektrum CMS – Autorenansicht exportieren
 // @namespace    https://www.spektrum.de/
-// @version      0.3.0
+// @version      0.3.1
 // @description  Exportiert Artikel mit Kommentarfunktion, optional eingebetteten Bildern und PDF-Druckansicht.
 // @match        https://www.spektrum.de/sixcms/detail.php*
 // @grant        GM_xmlhttpRequest
@@ -16,7 +16,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '0.3.0';
+    const VERSION = '0.3.1';
 
     const FONT_BASE =
         'https://static.spektrum.de/js_css/assets/fonts/custom/';
@@ -2280,7 +2280,16 @@ ${reviewPanel()}
                     if (!active.length) { fragment.appendChild(document.createTextNode(text)); return; }
                     var mark = el('mark', text);
                     mark.dataset.sdwComments = active.map(function (a) { return a.id; }).join(' ');
-                    mark.title = 'Kommentar ' + active.map(function (a) { return a.number; }).join(', ');
+                    mark.title = active.map(function (a) {
+                        var comment = state.comments.find(function (c) { return c.id === a.id; });
+                        function entryText(entry) {
+                            return (entry.author ? entry.author + ':\n' : '') + entry.text;
+                        }
+                        return entryText(comment) + (comment.replies || []).map(function (reply) {
+                            return '\n\nAntwort – ' + entryText(reply);
+                        }).join('');
+                    }).join('\n\n──────────\n\n');
+                    mark.setAttribute('aria-label', mark.title);
                     mark.tabIndex = 0;
                     function focusComment() { document.getElementById('sdw-comment-' + active[0].id).focus(); }
                     mark.addEventListener('click', focusComment);
