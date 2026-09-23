@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spektrum CMS – Autorenansicht exportieren
 // @namespace    https://www.spektrum.de/
-// @version      0.3.1
+// @version      0.3.2
 // @description  Exportiert Artikel mit Kommentarfunktion, optional eingebetteten Bildern und PDF-Druckansicht.
 // @match        https://www.spektrum.de/sixcms/detail.php*
 // @grant        GM_xmlhttpRequest
@@ -16,7 +16,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '0.3.1';
+    const VERSION = '0.3.2';
 
     const FONT_BASE =
         'https://static.spektrum.de/js_css/assets/fonts/custom/';
@@ -1182,7 +1182,7 @@
             .forEach(iframe => {
 
                 const src =
-                    iframe.getAttribute('src');
+                    iframe.getAttribute('src') || iframe.getAttribute('data-src');
 
                 if (src) {
 
@@ -1452,7 +1452,7 @@
 <head>
 
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' ${embedImages ? '' : 'https: http:'}; img-src data: ${embedImages ? '' : 'https: http:'}; font-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' ${embedImages ? '' : 'https: http:'}; img-src data: ${embedImages ? '' : 'https: http:'}; font-src data:; frame-src https://datawrapper.dwcdn.net https://charts.datawrapper.de; base-uri 'none'; form-action 'none'">
 
 <meta
     name="viewport"
@@ -1894,7 +1894,7 @@ ${reviewCss()}
 
             Exportiert am
             ${escapeHtml(exportDate)}
-            <br>${embedImages ? 'Bilder eingebettet · offline lesbar' : 'Bilder werden online nachgeladen'}
+            <br>${embedImages ? 'Text und Bilder offline lesbar · interaktive Karten benötigen Internet' : 'Bilder werden online nachgeladen'}
 
         </div>
 
@@ -2125,16 +2125,37 @@ ${reviewPanel()}
     async function preparePortableContent(root, embedImages, cache, setStatus) {
         root.querySelectorAll('script,style,link,base,meta,object,embed,foreignObject,noscript').forEach(el => el.remove());
         root.querySelectorAll('iframe,video,audio').forEach(node => {
-            const rawUrl = node.getAttribute('src') || node.querySelector('source')?.getAttribute('src');
+            const rawUrl = node.getAttribute('src') || node.getAttribute('data-src') || node.querySelector('source')?.getAttribute('src');
+            let datawrapperUrl = null;
+            if (node.tagName === 'IFRAME' && rawUrl) {
+                try {
+                    const url = new URL(rawUrl, location.href);
+                    if (url.protocol === 'https:' && !url.username && !url.password &&
+                        ['datawrapper.dwcdn.net', 'charts.datawrapper.de'].includes(url.hostname) &&
+                        !url.port) datawrapperUrl = url.href;
+                } catch (_) { /* Other/invalid embeds retain the existing link fallback. */ }
+            }
             const note = document.createElement('p');
             note.className = 'sdw-offline-note';
-            note.textContent = 'Interaktiver Inhalt / Medium ist in dieser Autorenansicht nicht enthalten. ';
-            if (rawUrl && /^https?:/i.test(rawUrl)) {
-                const link = document.createElement('a'); link.href = rawUrl;
+            note.textContent = datawrapperUrl
+                ? 'Diese interaktive Karte oder Grafik benötigt eine Internetverbindung. Falls sie nicht angezeigt wird: '
+                : 'Interaktiver Inhalt / Medium ist in dieser Autorenansicht nicht enthalten. ';
+            if (datawrapperUrl || (rawUrl && /^https?:/i.test(rawUrl))) {
+                const link = document.createElement('a'); link.href = datawrapperUrl || rawUrl;
                 link.textContent = 'Original online öffnen'; link.target = '_blank'; link.rel = 'noopener noreferrer';
                 note.appendChild(link);
             }
-            node.replaceWith(note);
+            if (datawrapperUrl) {
+                node.src = datawrapperUrl;
+                node.removeAttribute('srcdoc');
+                node.setAttribute('loading', 'eager');
+                if (!node.getAttribute('title')) node.setAttribute('title', 'Interaktive Datawrapper-Karte oder -Grafik');
+                node.classList.add('sdw-datawrapper-embed');
+                // Keep the frame and a permanent link, even when loading fails offline.
+                node.after(note);
+            } else {
+                node.replaceWith(note);
+            }
         });
         const images = [...root.querySelectorAll('img')];
         for (let i = 0; i < images.length; i++) {
