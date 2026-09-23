@@ -46,7 +46,7 @@ Die bisherigen Dateinamen mit Versionsnummer wurden durch stabile Dateinamen ers
 
 Referenzen: [Tampermonkey-Metadaten](https://www.tampermonkey.net/documentation.php#meta:updateURL), [GitHub Pages konfigurieren](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
 
-## Autorenansicht 0.3.0: Kommentare und PDF
+## Autorenansicht 0.3.2: Kommentare, PDF und Datawrapper
 
 1. Im CMS die Artikelvorschau öffnen. Beim Speicherbutton ist **Bilder einbetten** standardmäßig angehakt. Mit Häkchen enthält die HTML-Datei die Bilder; ohne Häkchen bleibt sie kleiner und lädt Bilder online nach.
 2. **Autorenansicht speichern** anklicken und die HTML-Datei weitergeben. Empfänger benötigen weder CMS-Zugang noch Tampermonkey. Die Datei herunterladen und im Browser öffnen; E-Mail-Vorschaufenster führen das eingebettete JavaScript oft nicht aus.
@@ -54,7 +54,7 @@ Referenzen: [Tampermonkey-Metadaten](https://www.tampermonkey.net/documentation.
 4. **Kommentierte Fassung speichern** erzeugt einen neuen HTML-Download einschließlich aller Kommentare, Antworten und Markierungen. Diese neue Datei zurücksenden. Die geöffnete Datei wird nicht überschrieben; es gibt keine serverseitige oder automatische Sicherung. Beim Verlassen mit ungespeicherten Änderungen wird gewarnt, soweit der Browser dies zulässt.
 5. **Als PDF speichern** öffnet den Browser-Druckdialog. Dort das PDF-Ziel auswählen. Alle Galeriebilder werden ausgegeben; Kommentare und Antworten stehen mit den zitierten Textstellen am Ende. Das PDF bleibt eine statische Fassung, weitere Kommentare sind in der HTML-Datei möglich.
 
-Interaktive Einbettungen, Videos und Audio werden durch Hinweise mit Links zum Original ersetzt. Artikelbilder müssen bei aktivierter Einbettung erfolgreich geladen werden, andernfalls bricht der Export mit einer Fehlermeldung ab. Nicht verfügbare dekorative CSS-Ressourcen werden ausgelassen. Externe Bildadressen können Zugriffsbeschränkungen unterliegen.
+Datawrapper-Karten und -Grafiken bleiben als Iframes erhalten und laden bei bestehender Internetverbindung, unabhängig von der Option **Bilder einbetten**. Darunter steht dauerhaft ein Hinweis mit Originallink, auch wenn die Karte offline nicht angezeigt werden kann. Die Karte selbst ist keine Offline-Kopie; Text, eingebettete Bilder und Kommentare bleiben offline verfügbar. Andere interaktive Einbettungen, Videos und Audio werden weiterhin durch Hinweise mit Links zum Original ersetzt. Artikelbilder müssen bei aktivierter Einbettung erfolgreich geladen werden, andernfalls bricht der Export mit einer Fehlermeldung ab. Nicht verfügbare dekorative CSS-Ressourcen werden ausgelassen. Externe Bildadressen können Zugriffsbeschränkungen unterliegen.
 
 Kommentare werden über Textposition, Zitat und Kontext verankert. Mehrdeutige/verlorene Textstellen werden als solche angezeigt; der Kommentar wird dabei nicht gelöscht. Überlappende Markierungen werden unterstützt. Rollen und Erledigt-Status sind nicht enthalten.
 
