@@ -31,6 +31,22 @@ function open(html) {
  w.GM_xmlhttpRequest=opts=>opts.onerror();
  const failed=d.createElement('div');failed.innerHTML='<img src="https://static.spektrum.de/fail.png">';
  await assert.rejects(w.api.preparePortableContent(failed,true,new Map(),()=>{}),/nicht geladen/);
+ // Datawrapper must survive both image modes, with an always-visible link fallback.
+ for (const embedImages of [true,false]) {
+  const embeds=d.createElement('div');
+  embeds.innerHTML='<iframe src="https://datawrapper.dwcdn.net/ABCDE/1/" srcdoc="unsafe" height="420"></iframe><iframe data-src="https://charts.datawrapper.de/FGHIJ/2/"></iframe><iframe src="https://datawrapper.dwcdn.net.evil.example/ABCDE/1/"></iframe><iframe src="javascript:alert(1)"></iframe>';
+  await w.api.preparePortableContent(embeds,embedImages,new Map(),()=>{});
+  assert.equal(embeds.querySelectorAll('iframe').length,2);
+  assert.equal(embeds.querySelector('iframe').getAttribute('srcdoc'),null);
+  assert.equal(embeds.querySelector('iframe').getAttribute('height'),'420');
+  assert.equal(embeds.querySelectorAll('iframe.sdw-datawrapper-embed').length,2);
+  for(const frame of embeds.querySelectorAll('iframe')) {
+   assert.match(frame.nextElementSibling.textContent,/Internetverbindung/);
+   assert.equal(frame.nextElementSibling.querySelector('a').href,frame.src);
+   assert(!frame.nextElementSibling.hidden);
+  }
+  if(embedImages) article.appendChild(embeds);
+ }
  const html=w.api.buildExportHtml({article,title:'Testartikel',logo:'Spektrum',originalCss:'',embeddedFontCss:'',embedImages:true});
  env.window.close();env=open(html);
  let doc=()=>env.window.document;
@@ -52,12 +68,15 @@ function open(html) {
   env.window.close();env=open(saved);
   assert.equal(doc().querySelectorAll('.sdw-review-card').length,4);
   assert.equal(doc().querySelectorAll('.sdw-review-reply').length,1);
+  assert.equal(doc().querySelectorAll('iframe.sdw-datawrapper-embed').length,2);
+  assert.match(doc().querySelector('iframe.sdw-datawrapper-embed').nextElementSibling.textContent,/Internetverbindung/);
   assert.equal(env.window.evil,undefined);
   assert.equal(doc().querySelector('#second mark').textContent,'Gleiches Wort');
-  assert.equal(doc().querySelector('[src^="http"],link[rel="stylesheet"]'),null);
+  assert.equal(doc().querySelector('[src^="http"]:not(iframe.sdw-datawrapper-embed),link[rel="stylesheet"]'),null);
  }
  click('#sdw-review-pdf');assert.equal(env.window.printCalled,true);
  assert.match(doc().querySelector('meta[http-equiv="Content-Security-Policy"]').content,/default-src 'none'/);
+ assert.match(doc().querySelector('meta[http-equiv="Content-Security-Policy"]').content,/frame-src https:\/\/datawrapper.dwcdn.net https:\/\/charts.datawrapper.de;/);
  assert.match(doc().querySelector('style').textContent,/\.sdw-author-gallery__slide\[hidden\] \{display:block!important;\}/);
  // Shift all positions and reconstruct from quoted text/context.
  const state=JSON.parse(doc().querySelector('#sdw-review-data').textContent);
@@ -67,5 +86,5 @@ function open(html) {
  assert.equal(doc().querySelector('#second mark').textContent,'Gleiches Wort');
  assert.deepEqual(errors,[]);
  env.window.close();
- console.log('PASS: optional image embedding and failure handling, CSS resources, sanitization, overlapping/cross-node/repeated anchors, quote-context fallback, replies, gallery navigation, draft protection, two save/reopen cycles, safe serialization and PDF button.');
+ console.log('PASS: Datawrapper in both image modes, permanent fallback, host validation, iframe save/reopen persistence, CSP frame allowance; optional image embedding and failure handling, CSS resources, sanitization, overlapping/cross-node/repeated anchors, quote-context fallback, replies, gallery navigation, draft protection, two save/reopen cycles, safe serialization and PDF button.');
 })().catch(e=>{console.error(e);process.exit(1)});
