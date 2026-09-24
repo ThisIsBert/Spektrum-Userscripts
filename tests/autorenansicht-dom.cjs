@@ -8,6 +8,7 @@ function open(html) {
  const console=new VirtualConsole();console.on('jsdomError',e=>errors.push(e.message));
  return new JSDOM(html,{url:'file:///test/article.html',runScripts:'dangerously',virtualConsole:console,beforeParse(w){
   w.HTMLElement.prototype.scrollIntoView=function(){};
+  w.Range.prototype.getClientRects=function(){return [{left:10,right:100,top:80,bottom:100,width:90,height:20}]};
   w.HTMLAnchorElement.prototype.click=function(){};
   w.URL.createObjectURL=b=>{captured=b;return 'blob:test'};w.URL.revokeObjectURL=()=>{};
   w.print=()=>{w.printCalled=true};
@@ -53,7 +54,26 @@ function open(html) {
  const click=s=>doc().querySelector(s).click();
  function select(selector,start,end){const root=doc().querySelector(selector),walk=doc().createTreeWalker(root,4);let n,pos=0,a,b;while(n=walk.nextNode()){if(!a&&start<=pos+n.length)a=[n,start-pos];if(end<=pos+n.length){b=[n,end-pos];break;}pos+=n.length;}const r=doc().createRange();r.setStart(...a);r.setEnd(...b);const sel=env.window.getSelection();sel.removeAllRanges();sel.addRange(r);}
  function comment(selector,start,end,text){select(selector,start,end);click('#sdw-review-add');doc().querySelector('#sdw-review-name').value='Jan';doc().querySelector('#sdw-review-message').value=text;click('#sdw-review-submit');}
- comment('#first',0,16,'Mehrere Textknoten. </script><script>window.evil=true</script>');
+ assert.equal(doc().querySelector('#sdw-review-toolbar').textContent,'Spektrum – Ansicht für Autorinnen und Autoren');
+ assert.equal(doc().querySelector('#sdw-review-toolbar button'),null);
+ assert.equal(doc().querySelector('.sdw-author-export-header'),null);
+ for(const id of ['sdw-review-add','sdw-review-save','sdw-review-pdf','sdw-review-status']) assert(doc().querySelector('#sdw-review').contains(doc().getElementById(id)));
+ select('#first',0,16);doc().dispatchEvent(new env.window.Event('selectionchange'));
+ assert.equal(doc().querySelector('#sdw-review-selection').hidden,false);
+ click('#sdw-review-selection');
+ assert.equal(doc().querySelector('#sdw-review-editor').hidden,false);
+ assert.equal(doc().querySelector('#sdw-review-selection').hidden,true);
+ doc().querySelector('#sdw-review-name').value='Jan';
+ const input=doc().querySelector('#sdw-review-message');
+ input.value='Mehrere Textknoten. </script><script>window.evil=true</script>';
+ const shiftEnter=new env.window.KeyboardEvent('keydown',{key:'Enter',shiftKey:true,bubbles:true,cancelable:true});
+ input.dispatchEvent(shiftEnter);assert.equal(shiftEnter.defaultPrevented,false);
+ assert.equal(doc().querySelectorAll('.sdw-review-card').length,0);
+ input.dispatchEvent(new env.window.KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true}));
+ assert.equal(doc().querySelectorAll('.sdw-review-card').length,0);
+ const enter=new env.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true});
+ input.dispatchEvent(enter);assert.equal(enter.defaultPrevented,true);
+ assert.equal(doc().querySelectorAll('.sdw-review-card').length,1);
  comment('#first',6,21,'Überlappende Markierung');comment('#second',0,13,'Zweites Vorkommen');
  assert.equal(doc().querySelectorAll('.sdw-review-card').length,3);
  assert(doc().querySelector('mark[data-sdw-comments*=" "]'));
@@ -71,7 +91,7 @@ function open(html) {
  assert.equal(doc().querySelector('#sdw-review-submit').textContent,'Änderungen übernehmen');
  doc().querySelector('#sdw-review-message').value='Überarbeitet <script>window.evil=true</script>';
  doc().querySelector('#sdw-review-name').value='Andere Person';
- click('#sdw-review-submit');
+ doc().querySelector('#sdw-review-message').dispatchEvent(new env.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
  assert.equal(firstCard().id,originalId);
  assert.equal(firstCard().querySelector('blockquote').textContent,originalQuote);
  assert.equal(doc().querySelectorAll('.sdw-review-card').length,4);
@@ -107,6 +127,8 @@ function open(html) {
   assert.equal(doc().querySelectorAll('iframe.sdw-datawrapper-embed').length,2);
   assert.match(doc().querySelector('iframe.sdw-datawrapper-embed').nextElementSibling.textContent,/Internetverbindung/);
   assert.equal(env.window.evil,undefined);
+  assert.equal(doc().querySelector('#sdw-review-selection').hidden,true);
+  assert.equal(doc().querySelector('#sdw-review-toolbar button'),null);
   assert.match(doc().querySelector('.sdw-review-card > .sdw-review-text').textContent,/Überarbeitet/);
   assert.equal(doc().querySelector('.sdw-review-reply .sdw-review-text').textContent,'Antwort korrigiert');
   assert.match(doc().querySelector('#first mark').title,/Antwort korrigiert/);
@@ -125,5 +147,5 @@ function open(html) {
  assert.equal(doc().querySelector('#second mark').textContent,'Gleiches Wort');
  assert.deepEqual(errors,[]);
  env.window.close();
- console.log('PASS: Datawrapper in both image modes, permanent fallback, host validation, iframe save/reopen persistence, CSP frame allowance; optional image embedding and failure handling, CSS resources, sanitization, overlapping/cross-node/repeated anchors, quote-context fallback, replies, gallery navigation, draft protection, two save/reopen cycles, safe serialization and PDF button.');
+ console.log('PASS: sidebar controls, title-only header, selection button, Enter submit/edit, Shift+Enter and IME protection; Datawrapper in both image modes, permanent fallback, host validation, iframe save/reopen persistence, CSP frame allowance; optional image embedding and failure handling, CSS resources, sanitization, overlapping/cross-node/repeated anchors, quote-context fallback, replies, gallery navigation, draft protection, two save/reopen cycles, safe serialization and PDF button.');
 })().catch(e=>{console.error(e);process.exit(1)});
