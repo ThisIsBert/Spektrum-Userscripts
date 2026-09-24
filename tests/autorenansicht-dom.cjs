@@ -58,10 +58,46 @@ function open(html) {
  assert.equal(doc().querySelectorAll('.sdw-review-card').length,3);
  assert(doc().querySelector('mark[data-sdw-comments*=" "]'));
  click('.sdw-review-card .sdw-review-actions button:last-child');doc().querySelector('#sdw-review-message').value='Eine Antwort';click('#sdw-review-submit');
- click('[data-gallery-next]');comment('.sdw-author-gallery__slide:nth-child(2) p',0,7,'Galeriekommentar');click('[data-gallery-next]');click('.sdw-review-card:last-child .sdw-review-actions button');
+ click('[data-gallery-next]');comment('.sdw-author-gallery__slide:nth-child(2) p',0,7,'Galeriekommentar');click('[data-gallery-next]');click('.sdw-review-card:last-child > .sdw-review-actions button:nth-child(2)');
  assert.equal(doc().querySelector('.sdw-author-gallery__slide:nth-child(2)').hidden,false);
  click('[data-gallery-next]');assert.equal(doc().querySelector('.sdw-author-gallery__slide').hidden,false);
  select('#first',0,5);click('#sdw-review-add');doc().querySelector('#sdw-review-message').value='Entwurf';captured=null;click('#sdw-review-save');assert.equal(captured,null);assert.match(doc().querySelector('#sdw-review-status').textContent,/Entwurf/);click('#sdw-review-cancel');
+ // Edit any author's comment and reply; preserve anchors, IDs and reply structure.
+ const firstCard=()=>doc().querySelector('.sdw-review-card');
+ const originalId=firstCard().id;
+ const originalQuote=firstCard().querySelector('blockquote').textContent;
+ click('.sdw-review-card > .sdw-review-actions button');
+ assert.match(doc().querySelector('#sdw-review-message').value,/Mehrere Textknoten/);
+ assert.equal(doc().querySelector('#sdw-review-submit').textContent,'Änderungen übernehmen');
+ doc().querySelector('#sdw-review-message').value='Überarbeitet <script>window.evil=true</script>';
+ doc().querySelector('#sdw-review-name').value='Andere Person';
+ click('#sdw-review-submit');
+ assert.equal(firstCard().id,originalId);
+ assert.equal(firstCard().querySelector('blockquote').textContent,originalQuote);
+ assert.equal(doc().querySelectorAll('.sdw-review-card').length,4);
+ assert.match(doc().querySelector('#first mark').title,/Überarbeitet/);
+ click('.sdw-review-reply .sdw-review-actions button');
+ assert.equal(doc().querySelector('#sdw-review-message').value,'Eine Antwort');
+ doc().querySelector('#sdw-review-message').value='Antwort korrigiert';
+ click('#sdw-review-submit');
+ assert.match(doc().querySelector('#first mark').title,/Antwort korrigiert/);
+ // Cancelling and empty submissions must not overwrite the existing comment.
+ click('.sdw-review-card > .sdw-review-actions button');
+ doc().querySelector('#sdw-review-message').value='';
+ click('#sdw-review-submit');
+ assert.equal(doc().querySelector('#sdw-review-editor').hidden,false);
+ captured=null;click('#sdw-review-save');assert.equal(captured,null);
+ const unload=new env.window.Event('beforeunload',{cancelable:true});
+ env.window.dispatchEvent(unload);assert(unload.defaultPrevented);
+ click('#sdw-review-cancel');
+ assert.match(firstCard().querySelector('.sdw-review-text').textContent,/Überarbeitet/);
+ // Switching editors refuses to discard changed text when the user cancels.
+ click('.sdw-review-card > .sdw-review-actions button');
+ doc().querySelector('#sdw-review-message').value='Nicht verlieren';
+ env.window.confirm=()=>false;
+ click('.sdw-review-reply .sdw-review-actions button');
+ assert.equal(doc().querySelector('#sdw-review-message').value,'Nicht verlieren');
+ env.window.confirm=()=>true;click('#sdw-review-cancel');
  for(let cycle=0;cycle<2;cycle++){
   click('#sdw-review-save');assert(captured);
   const saved=await new Promise(resolve=>{const reader=new env.window.FileReader();reader.onload=()=>resolve(reader.result);reader.readAsText(captured)});
@@ -71,6 +107,9 @@ function open(html) {
   assert.equal(doc().querySelectorAll('iframe.sdw-datawrapper-embed').length,2);
   assert.match(doc().querySelector('iframe.sdw-datawrapper-embed').nextElementSibling.textContent,/Internetverbindung/);
   assert.equal(env.window.evil,undefined);
+  assert.match(doc().querySelector('.sdw-review-card > .sdw-review-text').textContent,/Überarbeitet/);
+  assert.equal(doc().querySelector('.sdw-review-reply .sdw-review-text').textContent,'Antwort korrigiert');
+  assert.match(doc().querySelector('#first mark').title,/Antwort korrigiert/);
   assert.equal(doc().querySelector('#second mark').textContent,'Gleiches Wort');
   assert.equal(doc().querySelector('[src^="http"]:not(iframe.sdw-datawrapper-embed),link[rel="stylesheet"]'),null);
  }
