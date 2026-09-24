@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spektrum CMS – Autorenansicht exportieren
 // @namespace    https://www.spektrum.de/
-// @version      0.3.3
+// @version      0.3.4
 // @description  Exportiert Artikel mit Kommentarfunktion, optional eingebetteten Bildern und PDF-Druckansicht.
 // @match        https://www.spektrum.de/sixcms/detail.php*
 // @grant        GM_xmlhttpRequest
@@ -16,7 +16,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '0.3.3';
+    const VERSION = '0.3.4';
 
     const FONT_BASE =
         'https://static.spektrum.de/js_css/assets/fonts/custom/';
@@ -1876,31 +1876,7 @@ ${reviewCss()}
 
 <body class="article">
 
-<header class="sdw-author-export-header">
 
-    <div class="sdw-author-export-header__inner">
-
-        <div class="sdw-author-export-logo">
-            ${logo}
-        </div>
-
-        <div class="sdw-author-export-note">
-
-            <strong>
-                Autorenansicht
-            </strong>
-
-            <br>
-
-            Exportiert am
-            ${escapeHtml(exportDate)}
-            <br>${embedImages ? 'Text und Bilder offline lesbar · interaktive Karten benötigen Internet' : 'Bilder werden online nachgeladen'}
-
-        </div>
-
-    </div>
-
-</header>
 
 
 ${reviewMarkup()}
@@ -2256,9 +2232,43 @@ ${reviewPanel()}
             if (!text.slice(start, end).trim()) return null;
             return {start: start, end: end, exact: text.slice(start, end), prefix: text.slice(Math.max(0, start - 48), start), suffix: text.slice(end, end + 48)};
         }
-        document.addEventListener('selectionchange', function () {
+        var selectionButton = document.getElementById('sdw-review-selection');
+        function updateSelectionButton() {
             var anchor = capture();
-            if (anchor) selected = anchor;
+            selectionButton.hidden = true;
+            if (!anchor) return;
+            selected = anchor;
+            var range = window.getSelection().getRangeAt(0);
+            if (!range.getClientRects) return;
+            var rects = Array.from(range.getClientRects()).filter(function (r) { return r.width && r.height; });
+            if (!rects.length) return;
+            var rect = rects[rects.length - 1];
+            var barBottom = document.getElementById('sdw-review-toolbar').getBoundingClientRect().bottom;
+            if (rect.bottom < barBottom || rect.top > window.innerHeight) return;
+            selectionButton.hidden = false;
+            var width = selectionButton.offsetWidth, height = selectionButton.offsetHeight;
+            var x = Math.min(rect.right + 8, window.innerWidth - width - 8);
+            var y = rect.bottom + 6;
+            if (y + height > window.innerHeight - 8) y = rect.top - height - 6;
+            selectionButton.style.left = Math.max(8, x) + 'px';
+            selectionButton.style.top = Math.max(barBottom + 4, y) + 'px';
+        }
+        document.addEventListener('selectionchange', updateSelectionButton);
+        article.addEventListener('pointerup', updateSelectionButton);
+        article.addEventListener('keyup', updateSelectionButton);
+        window.addEventListener('scroll', function () { selectionButton.hidden = true; }, true);
+        window.addEventListener('resize', function () { selectionButton.hidden = true; });
+        document.addEventListener('pointerdown', function (event) {
+            if (!selectionButton.contains(event.target)) selectionButton.hidden = true;
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') selectionButton.hidden = true;
+        });
+        selectionButton.addEventListener('mousedown', function (event) { event.preventDefault(); });
+        selectionButton.addEventListener('click', function () {
+            var anchor = capture() || selected;
+            selectionButton.hidden = true;
+            if (anchor) openEditor(anchor, null);
         });
         function locate(anchor, text) {
             if (!anchor || !anchor.exact) return null;
@@ -2370,6 +2380,7 @@ ${reviewPanel()}
         }
         function openEditor(anchor, id, target) {
             if (editorHasChanges() && !window.confirm('Den noch nicht übernommenen Entwurf verwerfen?')) return;
+            selectionButton.hidden = true;
             pending = anchor; replyTo = id; editTarget = target || null;
             quote.textContent = anchor ? anchor.exact : 'Antwort auf Kommentar ' + (state.comments.findIndex(function (c) { return c.id === id; }) + 1);
             editor.hidden = false;
@@ -2377,7 +2388,7 @@ ${reviewPanel()}
             name.value = target ? target.author || '' : state.name || '';
             initialText = message.value; initialName = name.value;
             document.getElementById('sdw-review-submit').textContent = target ? 'Änderungen übernehmen' : 'Hinzufügen';
-            panel.scrollIntoView({block: 'nearest'}); message.focus();
+            editor.scrollIntoView({block: 'nearest'}); message.focus();
         }
         document.getElementById('sdw-review-add').addEventListener('mousedown', function (event) {
             var anchor = capture(); if (anchor) selected = anchor;
@@ -2409,6 +2420,13 @@ ${reviewPanel()}
             window.getSelection().removeAllRanges(); render();
             status.textContent = 'Änderungen noch nicht als HTML gespeichert.';
         });
+        message.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.altKey &&
+                !event.metaKey && !event.isComposing && event.keyCode !== 229) {
+                event.preventDefault();
+                document.getElementById('sdw-review-submit').click();
+            }
+        });
         function hasDraft() {
             if (!editor.hidden && (editTarget || message.value.trim() || editorHasChanges())) {
                 status.textContent = 'Bitte den Entwurf zuerst übernehmen oder abbrechen.';
@@ -2423,6 +2441,8 @@ ${reviewPanel()}
             clearMarks(clone.querySelector('#main article.content'));
             clone.querySelector('#sdw-review-data').textContent = JSON.stringify(state).replace(/</g, '\\u003c');
             clone.querySelector('#sdw-review-list').replaceChildren();
+            clone.querySelector('#sdw-review-selection').hidden = true;
+            clone.querySelector('#sdw-review-selection').removeAttribute('style');
             clone.querySelector('#sdw-review-editor').hidden = true;
             clone.querySelector('#sdw-review-message').textContent = '';
             clone.querySelector('#sdw-review-name').removeAttribute('value');
@@ -2449,52 +2469,60 @@ ${reviewPanel()}
     }
 
     function reviewMarkup() {
-        return `<nav id="sdw-review-toolbar" aria-label="Autorenkorrektur">
-<strong>Spektrum – Autorenkorrektur</strong>
-<p>Text im Artikel markieren, kommentieren und anschließend die kommentierte HTML-Datei speichern und zurücksenden.</p>
-<div><button type="button" id="sdw-review-add">Kommentar hinzufügen</button>
-<button type="button" id="sdw-review-save">Kommentierte Fassung speichern</button>
-<button type="button" id="sdw-review-pdf">Als PDF speichern</button></div>
-<p id="sdw-review-status" role="status" aria-live="polite"></p></nav>`;
+        return '<div id="sdw-review-toolbar">Spektrum – Ansicht für Autorinnen und Autoren</div>';
     }
 
     function reviewPanel() {
         return `<aside id="sdw-review" aria-label="Kommentare">
+<div id="sdw-review-controls">
+<p>Text markieren und kommentieren. Anschließend die kommentierte HTML-Datei speichern und zurücksenden.</p>
+<button type="button" id="sdw-review-add">Kommentar hinzufügen</button>
+<button type="button" id="sdw-review-save">Kommentierte Fassung speichern</button>
+<button type="button" id="sdw-review-pdf">Als PDF speichern</button>
+<p id="sdw-review-status" role="status" aria-live="polite"></p>
+</div>
 <h2 id="sdw-review-count">Kommentare</h2>
 <div id="sdw-review-editor" hidden>
 <label for="sdw-review-name">Ihr Name (optional)</label><input id="sdw-review-name" type="text" autocomplete="name">
 <blockquote id="sdw-review-quote"></blockquote>
-<label for="sdw-review-message">Kommentar / Antwort</label><textarea id="sdw-review-message" rows="5"></textarea>
+<label for="sdw-review-message">Kommentar / Antwort</label><textarea id="sdw-review-message" rows="5" aria-describedby="sdw-review-key-hint"></textarea>
+<p id="sdw-review-key-hint">Enter übernimmt · Umschalt+Enter fügt einen Zeilenumbruch ein.</p>
 <button type="button" id="sdw-review-submit">Hinzufügen</button> <button type="button" id="sdw-review-cancel">Abbrechen</button>
 </div><div id="sdw-review-list"></div></aside>
+<button type="button" id="sdw-review-selection" hidden>Kommentieren</button>
 <script id="sdw-review-data" type="application/json">{"version":1,"name":"","comments":[]}<\/script>`;
     }
 
     function reviewCss() {
         return `
 #sdw-review-toolbar, #sdw-review {font:16px/1.45 Arial,sans-serif;color:#222;background:#f5f6f7;box-sizing:border-box;text-align:left;}
-#sdw-review-toolbar {padding:16px 24px;border-bottom:1px solid #bbb;position:sticky;top:0;z-index:10000;}
+#sdw-review-toolbar {padding:9px 20px;border-bottom:1px solid #bbb;position:sticky;top:0;z-index:10000;}
 #sdw-review-toolbar p {font:14px/1.4 Arial,sans-serif;margin:6px 0;}
-#sdw-review-toolbar button, #sdw-review button {font:14px/1.3 Arial,sans-serif;padding:9px 12px;margin:3px 3px 3px 0;color:#fff;background:#235b6c;border:1px solid #235b6c;border-radius:4px;cursor:pointer;height:auto;}
-#sdw-review-toolbar button:focus-visible, #sdw-review button:focus-visible, #sdw-review input:focus, #sdw-review textarea:focus {outline:3px solid #dc8700;outline-offset:2px;}
+#sdw-review-selection, #sdw-review button {font:14px/1.3 Arial,sans-serif;padding:9px 12px;margin:3px 3px 3px 0;color:#fff;background:#235b6c;border:1px solid #235b6c;border-radius:4px;cursor:pointer;height:auto;}
+#sdw-review-selection:focus-visible, #sdw-review button:focus-visible, #sdw-review input:focus, #sdw-review textarea:focus {outline:3px solid #dc8700;outline-offset:2px;}
 #sdw-review {padding:20px;max-width:1100px;margin:20px auto;}
 #sdw-review h2 {font:bold 20px/1.3 Arial,sans-serif;margin:0 0 16px;}
 #sdw-review h3 {font:bold 16px/1.4 Arial,sans-serif;margin:0 0 10px;}
 #sdw-review p {font:16px/1.45 Arial,sans-serif;margin:8px 0;}
 #sdw-review blockquote {font:italic 14px/1.4 Arial,sans-serif;border-left:3px solid #d6a52c;margin:12px 0;padding:6px 10px;color:#555;max-height:140px;overflow:auto;white-space:pre-wrap;}
 #sdw-review input, #sdw-review textarea {display:block;box-sizing:border-box;width:100%;font:16px/1.4 Arial,sans-serif;color:#222;background:#fff;border:1px solid #888;padding:8px;margin:6px 0 12px;}
-#sdw-review [hidden] {display:none!important;}
-.sdw-review-card {background:#fff;border:1px solid #ccc;padding:14px;margin:12px 0;overflow-wrap:anywhere;scroll-margin-top:160px;}
+#sdw-review [hidden], #sdw-review-selection[hidden] {display:none!important;}
+#sdw-review-selection {position:fixed;z-index:2147483647;margin:0;box-shadow:0 2px 8px #0003;}
+#sdw-review-controls {padding-bottom:16px;margin-bottom:20px;border-bottom:1px solid #ccc;}
+#sdw-review-controls > button {display:block;width:100%;text-align:left;}
+#sdw-review-controls p, #sdw-review #sdw-review-key-hint {font:13px/1.4 Arial,sans-serif;}
+#sdw-review-editor {scroll-margin-top:12px;}
+.sdw-review-card {background:#fff;border:1px solid #ccc;padding:14px;margin:12px 0;overflow-wrap:anywhere;scroll-margin-top:65px;}
 .sdw-review-card:focus {outline:3px solid #d6a52c;}
 .sdw-review-text {white-space:pre-wrap;}
 .sdw-review-reply {border-left:2px solid #ccc;padding-left:12px;margin-top:16px;}
-mark[data-sdw-comments] {background:#ffe19a;color:inherit;cursor:pointer;scroll-margin-top:180px;}
+mark[data-sdw-comments] {background:#ffe19a;color:inherit;cursor:pointer;scroll-margin-top:65px;}
 mark[data-sdw-comments]:focus {outline:2px solid #9b6200;}
 .sdw-offline-note {padding:16px;border:1px solid #aaa;background:#f5f6f7;color:#333;}
-@media(min-width:1400px) {body.article {padding-right:350px;} #sdw-review {position:fixed;right:0;top:0;bottom:0;width:350px;margin:0;overflow:auto;z-index:10001;border-left:1px solid #ccc;}}
+@media(min-width:1100px) {body.article {padding-right:350px;} #sdw-review {position:fixed;right:0;top:0;bottom:0;width:350px;margin:0;overflow:auto;z-index:10001;border-left:1px solid #ccc;}}
 @media print {
 body.article {padding-right:0!important;}
-#sdw-review-toolbar, #sdw-review-editor, .sdw-review-actions {display:none!important;}
+#sdw-review-toolbar, #sdw-review-controls, #sdw-review-selection, #sdw-review-editor, .sdw-review-actions {display:none!important;}
 #sdw-review {position:static!important;width:auto!important;max-width:none!important;overflow:visible!important;background:white;break-before:page;margin:0;padding:0;}
 #sdw-review-list, .sdw-review-card, .sdw-review-text, .sdw-review-reply {display:block!important;height:auto!important;max-height:none!important;overflow:visible!important;}
 #sdw-review blockquote {max-height:none;overflow:visible;}
