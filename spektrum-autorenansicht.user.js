@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spektrum CMS – Autorenansicht exportieren
 // @namespace    https://www.spektrum.de/
-// @version      0.3.2
+// @version      0.3.3
 // @description  Exportiert Artikel mit Kommentarfunktion, optional eingebetteten Bildern und PDF-Druckansicht.
 // @match        https://www.spektrum.de/sixcms/detail.php*
 // @grant        GM_xmlhttpRequest
@@ -16,7 +16,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '0.3.2';
+    const VERSION = '0.3.3';
 
     const FONT_BASE =
         'https://static.spektrum.de/js_css/assets/fonts/custom/';
@@ -2212,6 +2212,7 @@ ${reviewPanel()}
         try { state = JSON.parse(data.textContent); }
         catch (_) { status.textContent = 'Kommentardaten konnten nicht gelesen werden. Bitte Originaldatei verwenden.'; return; }
         var pending = null, selected = null, replyTo = null, dirty = false;
+        var editTarget = null, initialText = '', initialName = '';
         var excluded = 'script,style,.sdw-author-gallery__controls';
         name.value = state.name || '';
         function el(tag, text, className) {
@@ -2345,20 +2346,37 @@ ${reviewPanel()}
                 (comment.replies || []).forEach(function (reply) {
                     var item = el('div', undefined, 'sdw-review-reply');
                     item.appendChild(el('strong', reply.author || 'Ohne Namen'));
-                    item.appendChild(el('p', reply.text, 'sdw-review-text')); card.appendChild(item);
+                    item.appendChild(el('p', reply.text, 'sdw-review-text'));
+                    var replyActions = el('div', undefined, 'sdw-review-actions');
+                    replyActions.appendChild(button('Bearbeiten', function () { openEditor(null, comment.id, reply); }));
+                    item.appendChild(replyActions); card.appendChild(item);
                 });
                 if (comment.unmatched) card.appendChild(el('p', 'Textstelle nicht eindeutig gefunden; der Kommentar bleibt erhalten.'));
                 var actions = el('div', undefined, 'sdw-review-actions');
+                actions.appendChild(button('Bearbeiten', function () { openEditor(comment.anchor, comment.id, comment); }));
                 actions.appendChild(button('Textstelle zeigen', function () { reveal(comment); }));
                 actions.appendChild(button('Antworten', function () { openEditor(null, comment.id); }));
                 card.appendChild(actions); list.appendChild(card);
             });
         }
-        function openEditor(anchor, id) {
-            if (!editor.hidden && message.value.trim() && !window.confirm('Den noch nicht hinzugefügten Kommentar verwerfen?')) return;
-            pending = anchor; replyTo = id;
+        function editorHasChanges() {
+            return !editor.hidden && (message.value !== initialText || name.value !== initialName);
+        }
+        function resetEditor() {
+            message.value = ''; editor.hidden = true;
+            pending = null; replyTo = null; editTarget = null;
+            name.value = state.name || '';
+            document.getElementById('sdw-review-submit').textContent = 'Hinzufügen';
+        }
+        function openEditor(anchor, id, target) {
+            if (editorHasChanges() && !window.confirm('Den noch nicht übernommenen Entwurf verwerfen?')) return;
+            pending = anchor; replyTo = id; editTarget = target || null;
             quote.textContent = anchor ? anchor.exact : 'Antwort auf Kommentar ' + (state.comments.findIndex(function (c) { return c.id === id; }) + 1);
-            editor.hidden = false; message.value = '';
+            editor.hidden = false;
+            message.value = target ? target.text : '';
+            name.value = target ? target.author || '' : state.name || '';
+            initialText = message.value; initialName = name.value;
+            document.getElementById('sdw-review-submit').textContent = target ? 'Änderungen übernehmen' : 'Hinzufügen';
             panel.scrollIntoView({block: 'nearest'}); message.focus();
         }
         document.getElementById('sdw-review-add').addEventListener('mousedown', function (event) {
@@ -2371,25 +2389,29 @@ ${reviewPanel()}
             openEditor(anchor, null);
         });
         document.getElementById('sdw-review-cancel').addEventListener('click', function () {
-            if (message.value.trim() && !window.confirm('Diesen Entwurf verwerfen?')) return;
-            message.value = ''; editor.hidden = true; pending = null; replyTo = null;
+            if (editorHasChanges() && !window.confirm('Diesen Entwurf verwerfen?')) return;
+            resetEditor();
         });
         document.getElementById('sdw-review-submit').addEventListener('click', function () {
             if (!message.value.trim()) { message.focus(); return; }
             var entry = {author: name.value.trim(), text: message.value.trim(), date: new Date().toISOString()};
-            if (replyTo) state.comments.find(function (c) { return c.id === replyTo; }).replies.push(entry);
+            if (editTarget) {
+                editTarget.text = entry.text;
+                editTarget.author = entry.author;
+                editTarget.editedAt = entry.date;
+            } else if (replyTo) state.comments.find(function (c) { return c.id === replyTo; }).replies.push(entry);
             else {
                 entry.id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
                 entry.anchor = pending; entry.replies = []; state.comments.push(entry);
             }
-            state.name = name.value; dirty = true; message.value = ''; editor.hidden = true;
-            pending = null; replyTo = null; selected = null;
+            if (!editTarget) state.name = name.value;
+            dirty = true; resetEditor(); selected = null;
             window.getSelection().removeAllRanges(); render();
             status.textContent = 'Änderungen noch nicht als HTML gespeichert.';
         });
         function hasDraft() {
-            if (!editor.hidden && message.value.trim()) {
-                status.textContent = 'Bitte den Entwurf zuerst mit „Hinzufügen“ übernehmen oder abbrechen.';
+            if (!editor.hidden && (editTarget || message.value.trim() || editorHasChanges())) {
+                status.textContent = 'Bitte den Entwurf zuerst übernehmen oder abbrechen.';
                 message.focus(); return true;
             }
             return false;
@@ -2420,7 +2442,7 @@ ${reviewPanel()}
             window.print();
         });
         window.addEventListener('beforeunload', function (event) {
-            if (!dirty && !message.value.trim()) return;
+            if (!dirty && !editorHasChanges()) return;
             event.preventDefault(); event.returnValue = '';
         });
         render();
