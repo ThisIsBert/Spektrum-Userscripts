@@ -46,11 +46,13 @@ Die bisherigen Dateinamen mit Versionsnummer wurden durch stabile Dateinamen ers
 
 Referenzen: [Tampermonkey-Metadaten](https://www.tampermonkey.net/documentation.php#meta:updateURL), [GitHub Pages konfigurieren](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
 
-## Autorenansicht 0.3.3: Kommentare, PDF und Datawrapper
+## Autorenansicht 0.3.4: Kommentare, PDF und Datawrapper
 
 1. Im CMS die Artikelvorschau öffnen. Beim Speicherbutton ist **Bilder einbetten** standardmäßig angehakt. Mit Häkchen enthält die HTML-Datei die Bilder; ohne Häkchen bleibt sie kleiner und lädt Bilder online nach.
 2. **Autorenansicht speichern** anklicken und die HTML-Datei weitergeben. Empfänger benötigen weder CMS-Zugang noch Tampermonkey. Die Datei herunterladen und im Browser öffnen; E-Mail-Vorschaufenster führen das eingebettete JavaScript oft nicht aus.
-3. Text im Artikel markieren und **Kommentar hinzufügen** wählen. Optional den eigenen Namen eingeben, den Kommentar schreiben und **Hinzufügen** anklicken. Antworten auf vorhandene Kommentare sind möglich. Über **Bearbeiten** lässt sich der Text jedes Kommentars und jeder Antwort nachträglich ändern, unabhängig vom Verfasser. **Änderungen übernehmen** aktualisiert den Eintrag und seinen Mouseover-Text; **Abbrechen** verwirft den Entwurf. Anschließend die kommentierte HTML-Datei erneut speichern.
+3. Text im Artikel markieren und den daneben erscheinenden **Kommentieren**-Button oder **Kommentar hinzufügen** in der rechten Spalte wählen. Optional den eigenen Namen eingeben, den Kommentar schreiben und mit **Enter** oder **Hinzufügen** übernehmen. **Umschalt+Enter** erzeugt einen Zeilenumbruch. Das gilt auch für Antworten und das Bearbeiten. Antworten auf vorhandene Kommentare sind möglich. Über **Bearbeiten** lässt sich der Text jedes Kommentars und jeder Antwort nachträglich ändern, unabhängig vom Verfasser. **Änderungen übernehmen** aktualisiert den Eintrag und seinen Mouseover-Text; **Abbrechen** verwirft den Entwurf. Anschließend die kommentierte HTML-Datei erneut speichern.
+Die obere Leiste zeigt nur **Spektrum – Ansicht für Autorinnen und Autoren**. Kommentar-, HTML-Speicher- und PDF-Buttons befinden sich mit den Kommentaren in der rechten Spalte; auf schmalen Bildschirmen steht dieser Bereich unter dem Artikel.
+
 4. **Kommentierte Fassung speichern** erzeugt einen neuen HTML-Download einschließlich aller Kommentare, Antworten und Markierungen. Diese neue Datei zurücksenden. Die geöffnete Datei wird nicht überschrieben; es gibt keine serverseitige oder automatische Sicherung. Beim Verlassen mit ungespeicherten Änderungen wird gewarnt, soweit der Browser dies zulässt.
 5. **Als PDF speichern** öffnet den Browser-Druckdialog. Dort das PDF-Ziel auswählen. Alle Galeriebilder werden ausgegeben; Kommentare und Antworten stehen mit den zitierten Textstellen am Ende. Das PDF bleibt eine statische Fassung, weitere Kommentare sind in der HTML-Datei möglich.
 
