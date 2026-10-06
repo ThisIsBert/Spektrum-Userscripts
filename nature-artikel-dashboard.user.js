@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Nature: Artikel-Dashboard
 // @namespace    https://www.nature.com/
-// @version      2.1.3
+// @version      2.2.0
 // @description  Kopiert Artikeltext, Übersetzungsquelle und alphabetisch sortierte References im Spektrum-Format.
 // @match        https://www.nature.com/articles/*
 // @grant        GM_setClipboard
+// @grant        GM_xmlhttpRequest
+// @connect      api.crossref.org
 // @run-at       document-idle
 // @homepageURL  https://thisisbert.github.io/Spektrum-Userscripts/
 // @supportURL   https://github.com/ThisIsBert/Spektrum-Userscripts/issues
@@ -78,8 +80,13 @@
         references: 'nature-copy-references-button'
     };
 
+    const CROSSREF_MIN_INTERVAL_MS = 220;
+    const journalTitleCache = new Map();
+
     let statusTimer = 0;
     let updateTimer = 0;
+    let crossrefQueue = Promise.resolve();
+    let lastCrossrefRequestAt = 0;
 
     function cleanInlineText(value) {
         return String(value || '')
@@ -476,109 +483,109 @@
         );
     }
 
-function getReferenceJournal(
-    item,
-    citationElement
-) {
-    /*
-     * Auf manchen Nature-Seiten ist „et al.“
-     * kursiv gesetzt. Die frühere Suche nach dem
-     * ersten <i>- oder <em>-Element hielt es dann
-     * irrtümlich für den Journalnamen.
-     */
-    const journalElement = Array.from(
-        item.querySelectorAll([
-            '.c-article-references__journal',
-            '[class*="references__journal"]',
-            '[data-test*="journal"]',
-            'i',
-            'em'
-        ].join(','))
-    ).find(element => {
-        const candidate = cleanInlineText(
-            element.textContent
-        )
-            .replace(/[.,;:]\s*$/, '')
-            .trim();
+    function getReferenceJournal(
+        item,
+        citationElement
+    ) {
+        /*
+         * Auf manchen Nature-Seiten ist „et al.“
+         * kursiv gesetzt. Die frühere Suche nach dem
+         * ersten <i>- oder <em>-Element hielt es dann
+         * irrtümlich für den Journalnamen.
+         */
+        const journalElement = Array.from(
+            item.querySelectorAll([
+                '.c-article-references__journal',
+                '[class*="references__journal"]',
+                '[data-test*="journal"]',
+                'i',
+                'em'
+            ].join(','))
+        ).find(element => {
+            const candidate = cleanInlineText(
+                element.textContent
+            )
+                .replace(/[.,;:]\s*$/, '')
+                .trim();
 
-        return (
-            candidate &&
-            !/^et\s+al\.?$/i.test(candidate)
+            return (
+                candidate &&
+                !/^et\s+al\.?$/i.test(candidate)
+            );
+        });
+
+        if (journalElement) {
+            const journal = cleanInlineText(
+                journalElement.textContent
+            )
+                .replace(
+                    /^et\s+al\.?\s*[.,;:]?\s*/i,
+                    ''
+                )
+                .replace(/[.,;:]\s*$/, '')
+                .replace(
+                    /\s+\d+(?:\s*,.*)?$/,
+                    ''
+                )
+                .trim();
+
+            return {
+                element: journalElement,
+                journal
+            };
+        }
+
+        const authorsElement =
+            item.querySelector([
+                '.c-article-references__authors',
+                '[class*="references__authors"]',
+                '[data-test*="author"]'
+            ].join(','));
+
+        const citationText = cleanInlineText(
+            citationElement.textContent
         );
-    });
 
-    if (journalElement) {
-        const journal = cleanInlineText(
-            journalElement.textContent
-        )
-            .replace(
-                /^et\s+al\.?\s*[.,;:]?\s*/i,
-                ''
-            )
-            .replace(/[.,;:]\s*$/, '')
-            .replace(
-                /\s+\d+(?:\s*,.*)?$/,
-                ''
-            )
-            .trim();
+        const authorsText = cleanInlineText(
+            authorsElement?.textContent
+        );
+
+        if (!authorsText) {
+            return {
+                element: null,
+                journal: ''
+            };
+        }
+
+        const authorsIndex =
+            citationText.indexOf(authorsText);
+
+        const afterAuthors =
+            authorsIndex >= 0
+                ? citationText.slice(
+                    authorsIndex +
+                    authorsText.length
+                )
+                : '';
+
+        const journal =
+            cleanInlineText(afterAuthors)
+                .replace(
+                    /^\s*(?:et\s+al\.)?\s*/i,
+                    ''
+                )
+                .replace(/^[.,;:]\s*/, '')
+                .split(
+                    /\s+(?=(?:https?:\/\/(?:dx\.)?doi\.org\/|10\.\d{4,9}\/|\d+\s*,|\((?:19|20)\d{2}\)))/i
+                )[0]
+                .replace(/[.,;:]\s*$/, '')
+                .trim();
 
         return {
-            element: journalElement,
+            element: null,
             journal
         };
     }
-
-    const authorsElement =
-        item.querySelector([
-            '.c-article-references__authors',
-            '[class*="references__authors"]',
-            '[data-test*="author"]'
-        ].join(','));
-
-    const citationText = cleanInlineText(
-        citationElement.textContent
-    );
-
-    const authorsText = cleanInlineText(
-        authorsElement?.textContent
-    );
-
-    if (!authorsText) {
-        return {
-            element: null,
-            journal: ''
-        };
-    }
-
-    const authorsIndex =
-        citationText.indexOf(authorsText);
-
-    const afterAuthors =
-        authorsIndex >= 0
-            ? citationText.slice(
-                authorsIndex +
-                authorsText.length
-            )
-            : '';
-
-    const journal =
-        cleanInlineText(afterAuthors)
-            .replace(
-                /^\s*(?:et\s+al\.)?\s*/i,
-                ''
-            )
-            .replace(/^[.,;:]\s*/, '')
-            .split(
-                /\s+(?=(?:https?:\/\/(?:dx\.)?doi\.org\/|10\.\d{4,9}\/|\d+\s*,|\((?:19|20)\d{2}\)))/i
-            )[0]
-            .replace(/[.,;:]\s*$/, '')
-            .trim();
-
-    return {
-        element: null,
-        journal
-    };
-}
 
     function getReferenceAuthorsText(
         item,
@@ -886,20 +893,169 @@ function getReferenceJournal(
         };
     }
 
-    function createFormattedReferences() {
+    function wait(milliseconds) {
+        return new Promise(resolve => {
+            window.setTimeout(resolve, milliseconds);
+        });
+    }
+
+    function encodeDoiForCrossref(doi) {
+        return encodeURIComponent(doi)
+            .replace(/%2F/gi, '/');
+    }
+
+    function requestCrossrefWork(doi) {
+        const url =
+            'https://api.crossref.org/works/' +
+            encodeDoiForCrossref(doi);
+
+        return new Promise((resolve, reject) => {
+            if (
+                typeof GM_xmlhttpRequest !==
+                'function'
+            ) {
+                reject(new Error(
+                    'GM_xmlhttpRequest ist nicht verfügbar.'
+                ));
+                return;
+            }
+
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url,
+                headers: {
+                    Accept: 'application/json'
+                },
+                timeout: 10000,
+                onload(response) {
+                    if (
+                        response.status < 200 ||
+                        response.status >= 300
+                    ) {
+                        reject(new Error(
+                            `Crossref antwortete mit HTTP ${response.status}.`
+                        ));
+                        return;
+                    }
+
+                    try {
+                        const data = JSON.parse(
+                            response.responseText
+                        );
+
+                        resolve(data?.message || null);
+                    } catch (error) {
+                        reject(new Error(
+                            'Crossref-Antwort konnte nicht gelesen werden.'
+                        ));
+                    }
+                },
+                ontimeout() {
+                    reject(new Error(
+                        'Crossref-Anfrage hat zu lange gedauert.'
+                    ));
+                },
+                onerror() {
+                    reject(new Error(
+                        'Crossref-Anfrage ist fehlgeschlagen.'
+                    ));
+                }
+            });
+        });
+    }
+
+    function queueCrossrefRequest(doi) {
+        const task = crossrefQueue.then(async () => {
+            const elapsed =
+                Date.now() - lastCrossrefRequestAt;
+
+            if (
+                lastCrossrefRequestAt &&
+                elapsed < CROSSREF_MIN_INTERVAL_MS
+            ) {
+                await wait(
+                    CROSSREF_MIN_INTERVAL_MS - elapsed
+                );
+            }
+
+            lastCrossrefRequestAt = Date.now();
+            return requestCrossrefWork(doi);
+        });
+
+        crossrefQueue = task.then(
+            () => undefined,
+            () => undefined
+        );
+
+        return task;
+    }
+
+    function getFullJournalTitle(
+        doi,
+        fallbackJournal
+    ) {
+        const cacheKey = doi.toLowerCase();
+
+        if (journalTitleCache.has(cacheKey)) {
+            return journalTitleCache.get(cacheKey);
+        }
+
+        const titlePromise =
+            queueCrossrefRequest(doi)
+                .then(message => {
+                    const titles = Array.isArray(
+                        message?.['container-title']
+                    )
+                        ? message['container-title']
+                        : [];
+
+                    const fullTitle = titles
+                        .map(cleanInlineText)
+                        .find(Boolean);
+
+                    return fullTitle || fallbackJournal;
+                })
+                .catch(error => {
+                    console.debug(
+                        '[Nature-Dashboard] ' +
+                        `Crossref-Fallback für ${doi}:`,
+                        error
+                    );
+
+                    return fallbackJournal;
+                });
+
+        journalTitleCache.set(
+            cacheKey,
+            titlePromise
+        );
+
+        return titlePromise;
+    }
+
+    async function createFormattedReferences() {
         const references =
             getReferenceEntries()
-                .map(parseReferenceEntry)
-                .sort((first, second) => (
-                    first.sortKey.localeCompare(
-                        second.sortKey,
-                        'de',
-                        {
-                            sensitivity: 'base',
-                            ignorePunctuation: true
-                        }
-                    )
-                ));
+                .map(parseReferenceEntry);
+
+        for (const reference of references) {
+            reference.journal =
+                await getFullJournalTitle(
+                    reference.doi,
+                    reference.journal
+                );
+        }
+
+        references.sort((first, second) => (
+            first.sortKey.localeCompare(
+                second.sortKey,
+                'de',
+                {
+                    sensitivity: 'base',
+                    ignorePunctuation: true
+                }
+            )
+        ));
 
         return references
             .map(reference => (
@@ -1115,7 +1271,7 @@ function getReferenceJournal(
             );
 
             const references =
-                createFormattedReferences();
+                await createFormattedReferences();
 
             await writeToClipboard(
                 references
@@ -1379,7 +1535,7 @@ function getReferenceJournal(
             );
 
         referencesButton.title =
-            'References ins Spektrum-Format bringen und alphabetisch kopieren';
+            'References ins Spektrum-Format bringen, Journalnamen ausschreiben und alphabetisch kopieren';
 
         const status =
             document.createElement('div');
