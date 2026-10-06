@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nature: Artikel-Dashboard
 // @namespace    https://www.nature.com/
-// @version      2.1.2
+// @version      2.1.3
 // @description  Kopiert Artikeltext, Übersetzungsquelle und alphabetisch sortierte References im Spektrum-Format.
 // @match        https://www.nature.com/articles/*
 // @grant        GM_setClipboard
@@ -638,14 +638,52 @@ function getReferenceJournal(
         return '';
     }
 
+    function isReferenceInitials(value) {
+        return /^(?:\p{L}\.(?:[-‐‑–]\p{L}\.)?\s*)+$/u.test(
+            cleanInlineText(value)
+        );
+    }
+
+    function parseCombinedReferenceAuthor(value) {
+        const text = cleanInlineText(value);
+        const match = text.match(
+            /^(.+?)\s+((?:\p{L}\.(?:[-‐‑–]\p{L}\.)?\s*)+)$/u
+        );
+
+        if (!match) {
+            return null;
+        }
+
+        const surname = cleanInlineText(
+            match[1]
+        )
+            .replace(/,+$/, '')
+            .trim();
+
+        const initials = cleanInlineText(
+            match[2]
+        );
+
+        if (
+            !surname ||
+            !isReferenceInitials(initials)
+        ) {
+            return null;
+        }
+
+        return {
+            surname,
+            initials
+        };
+    }
+
     function parseReferenceAuthors(value) {
         /*
-         * Nature schreibt Autoren normalerweise
-         * paarweise als „Nachname, Initialen“.
-         *
-         * Wir zerlegen diese Struktur an den
-         * Kommata. Dadurch funktionieren auch
-         * Akzente und Bindestriche zuverlässig.
+         * Nature verwendet nicht durchgehend
+         * dieselbe Autorenschreibweise. Neben
+         * „Nachname, Initialen“ kommen auch
+         * „Nachname Initialen“ und Mischformen
+         * innerhalb derselben Referenz vor.
          */
         const text = cleanInlineText(value)
             .replace(/^\d+\.\s*/, '')
@@ -671,21 +709,29 @@ function getReferenceJournal(
 
         for (
             let index = 0;
-            index + 1 < parts.length;
-            index += 2
+            index < parts.length;
         ) {
+            const combined =
+                parseCombinedReferenceAuthor(
+                    parts[index]
+                );
+
+            if (combined) {
+                authors.push(
+                    `${combined.surname}, ${combined.initials}`
+                );
+
+                index += 1;
+                continue;
+            }
+
             const surname = parts[index];
             const initials = parts[index + 1];
 
-            /*
-             * Der Initialenteil muss lediglich
-             * mindestens einen Punkt enthalten.
-             * Seine Schreibweise bleibt unverändert.
-             */
             if (
                 !surname ||
                 !initials ||
-                !initials.includes('.')
+                !isReferenceInitials(initials)
             ) {
                 return [];
             }
@@ -693,11 +739,11 @@ function getReferenceJournal(
             authors.push(
                 `${surname}, ${initials}`
             );
+
+            index += 2;
         }
 
-        return authors.length * 2 === parts.length
-            ? authors
-            : [];
+        return authors;
     }
 
     function formatReferenceAuthors(
