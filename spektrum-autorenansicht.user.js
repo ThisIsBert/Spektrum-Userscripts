@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spektrum CMS – Autorenansicht exportieren
 // @namespace    https://www.spektrum.de/
-// @version      0.3.6
+// @version      0.3.7
 // @description  Exportiert Artikel mit eingebetteten Bildern, optionaler Kommentarfunktion und PDF-Druckansicht.
 // @match        https://www.spektrum.de/sixcms/detail.php*
 // @grant        GM_xmlhttpRequest
@@ -16,7 +16,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '0.3.6';
+    const VERSION = '0.3.7';
 
     const FONT_BASE =
         'https://static.spektrum.de/js_css/assets/fonts/custom/';
@@ -261,6 +261,9 @@
         const article =
             originalArticle.cloneNode(true);
 
+        // Font-Awesome-Glyph U+F0FE (Plus-Quadrat) auch offline korrekt zeigen.
+        replacePlusSquareIcons(originalArticle, article);
+
         removeUnwantedElements(article);
 
         activateLazyImages(article);
@@ -306,6 +309,61 @@
         );
     }
 
+
+    // Replace the Font Awesome plus-square glyph before stylesheets lose their
+    // original icon font. Inline SVG works in offline HTML and PDF exports.
+    function replacePlusSquareIcons(source, target) {
+        const originalElements = [source, ...source.querySelectorAll('*')];
+        const exportedElements = [target, ...target.querySelectorAll('*')];
+        const svgNamespace = 'http://www.w3.org/2000/svg';
+
+        for (let i = 0; i < originalElements.length; i++) {
+            const original = originalElements[i];
+            const exported = exportedElements[i];
+
+            for (const pseudo of ['::before', '::after']) {
+                const style = getComputedStyle(original, pseudo);
+                const content = style.content || '';
+
+                // Some browsers return the glyph, others the CSS escape.
+                if (!content.includes('\uf0fe') && !/\\f0fe\b/i.test(content)) {
+                    continue;
+                }
+
+                const svg = document.createElementNS(svgNamespace, 'svg');
+                svg.setAttribute('viewBox', '0 0 16 16');
+                svg.setAttribute('aria-hidden', 'true');
+                svg.setAttribute('focusable', 'false');
+                svg.classList.add('sdw-author-plus-square');
+                svg.style.color = style.color;
+                svg.style.fontSize = style.fontSize;
+
+                const square = document.createElementNS(svgNamespace, 'rect');
+                square.setAttribute('x', '0.75');
+                square.setAttribute('y', '0.75');
+                square.setAttribute('width', '14.5');
+                square.setAttribute('height', '14.5');
+                square.setAttribute('rx', '2');
+                square.setAttribute('fill', 'currentColor');
+
+                const plus = document.createElementNS(svgNamespace, 'path');
+                plus.setAttribute('d', 'M8 4.2v7.6M4.2 8h7.6');
+                plus.setAttribute('fill', 'none');
+                plus.setAttribute('stroke', '#fff');
+                plus.setAttribute('stroke-width', '1.7');
+                plus.setAttribute('stroke-linecap', 'round');
+
+                svg.append(square, plus);
+                if (pseudo === '::before') {
+                    exported.classList.add('sdw-author-plus-square-before');
+                    exported.prepend(svg);
+                } else {
+                    exported.classList.add('sdw-author-plus-square-after');
+                    exported.append(svg);
+                }
+            }
+        }
+    }
 
     // ============================================================
     // CSS HERUNTERLADEN
@@ -1512,6 +1570,20 @@
    ========================================================== */
 
 ${originalCss}
+
+/* Offline-Ersatz fuer das Font-Awesome-Plus-Quadrat. */
+.sdw-author-plus-square-before::before,
+.sdw-author-plus-square-after::after {
+    content: none !important;
+    display: none !important;
+}
+svg.sdw-author-plus-square {
+    display: inline-block !important;
+    width: 1em !important;
+    height: 1em !important;
+    vertical-align: -0.125em;
+    overflow: visible;
+}
 
 
 /* ==========================================================
