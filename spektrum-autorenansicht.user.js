@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Spektrum CMS – Autorenansicht exportieren
 // @namespace    https://www.spektrum.de/
-// @version      0.3.4
-// @description  Exportiert Artikel mit Kommentarfunktion, optional eingebetteten Bildern und PDF-Druckansicht.
+// @version      0.3.5
+// @description  Exportiert Artikel mit eingebetteten Bildern, optionaler Kommentarfunktion und PDF-Druckansicht.
 // @match        https://www.spektrum.de/sixcms/detail.php*
 // @grant        GM_xmlhttpRequest
 // @connect      static.spektrum.de
@@ -96,19 +96,21 @@
         const options = document.createElement('div');
         Object.assign(options.style, {position: 'fixed', right: '18px', bottom: '70px', zIndex: '2147483647', padding: '8px 12px', background: '#fff', color: '#222', border: '1px solid #bbb', borderRadius: '4px', font: '14px Arial,sans-serif'});
         const label = document.createElement('label');
-        const embedImages = document.createElement('input');
-        embedImages.type = 'checkbox'; embedImages.checked = true;
-        embedImages.id = 'sdw-author-embed-images';
-        label.append(embedImages, document.createTextNode(' Bilder einbetten'));
-        label.title = 'An: Bilder sind offline in der HTML-Datei enthalten. Aus: kleinere Datei; Bilder werden online nachgeladen.';
+        const withComments = document.createElement('input');
+        withComments.type = 'checkbox'; withComments.checked = true;
+        withComments.id = 'sdw-author-with-comments';
+        label.append(withComments, document.createTextNode(' Mit Kommentarfunktion'));
         options.appendChild(label); document.body.appendChild(options);
 
+        button.style.setProperty('background-color', '#222', 'important');
+        button.style.setProperty('color', '#fff', 'important');
+
         button.addEventListener('mouseenter', () => {
-            button.style.background = '#444';
+            button.style.setProperty('background-color', '#444', 'important');
         });
 
         button.addEventListener('mouseleave', () => {
-            button.style.background = '#222';
+            button.style.setProperty('background-color', '#222', 'important');
         });
 
         button.addEventListener('click', async () => {
@@ -118,11 +120,11 @@
             try {
 
                 button.disabled = true;
-                embedImages.disabled = true;
+                withComments.disabled = true;
 
                 button.textContent = 'Lade Styles und Schrift …';
 
-                await exportArticle(embedImages.checked, status => {
+                await exportArticle(withComments.checked, status => {
                     button.textContent = status;
                 });
 
@@ -131,7 +133,7 @@
                 setTimeout(() => {
                     button.textContent = oldText;
                     button.disabled = false;
-                    embedImages.disabled = false;
+                    withComments.disabled = false;
                 }, 1800);
 
             } catch (error) {
@@ -145,7 +147,7 @@
 
                 button.textContent = oldText;
                 button.disabled = false;
-                embedImages.disabled = false;
+                withComments.disabled = false;
             }
         });
 
@@ -157,7 +159,9 @@
     // EXPORT
     // ============================================================
 
-    async function exportArticle(embedImages, setStatus) {
+    async function exportArticle(withComments, setStatus) {
+
+        const embedImages = true;
 
         const originalArticle =
             document.querySelector('#main article.content');
@@ -261,7 +265,8 @@
                 logo,
                 originalCss,
                 embedImages,
-                embeddedFontCss
+                embeddedFontCss,
+                withComments
             });
 
         downloadHtml(
@@ -1431,7 +1436,8 @@
         logo,
         originalCss,
         embedImages,
-        embeddedFontCss
+        embeddedFontCss,
+        withComments
     }) {
 
         const exportDate =
@@ -1868,7 +1874,7 @@ iframe {
     }
 }
 
-${reviewCss()}
+${withComments ? reviewCss() : pdfOnlyCss()}
 </style>
 
 </head>
@@ -1879,7 +1885,7 @@ ${reviewCss()}
 
 
 
-${reviewMarkup()}
+${withComments ? reviewMarkup() : pdfOnlyMarkup()}
 
 <div id="page-wrap">
 
@@ -1892,8 +1898,8 @@ ${reviewMarkup()}
 </div>
 
 
-${reviewPanel()}
-<script>(${reviewRuntime.toString()})();<\/script>
+${withComments ? reviewPanel() : ''}
+${withComments ? `<script>(${reviewRuntime.toString()})();<\/script>` : `<script>(${pdfOnlyRuntime.toString()})();<\/script>`}
 
 <script>
 
@@ -2493,12 +2499,36 @@ ${reviewPanel()}
 <script id="sdw-review-data" type="application/json">{"version":1,"name":"","comments":[]}<\/script>`;
     }
 
+    function pdfOnlyMarkup() {
+        return '<div id="sdw-export-pdf-toolbar"><button type="button" id="sdw-export-pdf">Als PDF speichern</button></div>';
+    }
+
+    function pdfOnlyRuntime() {
+        'use strict';
+        document.getElementById('sdw-export-pdf').addEventListener('click', function () {
+            window.print();
+        });
+    }
+
+    function pdfOnlyCss() {
+        return `
+#sdw-export-pdf-toolbar {position:sticky;top:0;z-index:10000;display:flex;justify-content:flex-end;padding:9px 20px;background:#f5f6f7!important;border-bottom:1px solid #bbb;}
+#sdw-export-pdf {font:bold 14px/1.3 Arial,sans-serif;padding:9px 12px;background:#235b6c!important;color:#fff!important;border:1px solid #235b6c!important;border-radius:4px;cursor:pointer;color-scheme:light;}
+#sdw-export-pdf:focus-visible {outline:3px solid #dc8700;outline-offset:2px;}
+@media print {
+#sdw-export-pdf-toolbar {display:none!important;}
+#main article.content {width:100%!important;max-width:none!important;color:#222!important;}
+.sdw-author-gallery__viewport {overflow:visible!important;}
+}
+`;
+    }
     function reviewCss() {
         return `
 #sdw-review-toolbar, #sdw-review {font:16px/1.45 Arial,sans-serif;color:#222;background:#f5f6f7;box-sizing:border-box;text-align:left;}
 #sdw-review-toolbar {padding:9px 20px;border-bottom:1px solid #bbb;position:sticky;top:0;z-index:10000;}
 #sdw-review-toolbar p {font:14px/1.4 Arial,sans-serif;margin:6px 0;}
 #sdw-review-selection, #sdw-review button {font:14px/1.3 Arial,sans-serif;padding:9px 12px;margin:3px 3px 3px 0;color:#fff;background:#235b6c;border:1px solid #235b6c;border-radius:4px;cursor:pointer;height:auto;}
+#sdw-review-pdf {background:#235b6c!important;color:#fff!important;border-color:#235b6c!important;color-scheme:light;}
 #sdw-review-selection:focus-visible, #sdw-review button:focus-visible, #sdw-review input:focus, #sdw-review textarea:focus {outline:3px solid #dc8700;outline-offset:2px;}
 #sdw-review {padding:20px;max-width:1100px;margin:20px auto;}
 #sdw-review h2 {font:bold 20px/1.3 Arial,sans-serif;margin:0 0 16px;}
