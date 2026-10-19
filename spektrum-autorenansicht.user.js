@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spektrum CMS – Autorenansicht exportieren
 // @namespace    https://www.spektrum.de/
-// @version      0.3.5
+// @version      0.3.6
 // @description  Exportiert Artikel mit eingebetteten Bildern, optionaler Kommentarfunktion und PDF-Druckansicht.
 // @match        https://www.spektrum.de/sixcms/detail.php*
 // @grant        GM_xmlhttpRequest
@@ -16,7 +16,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '0.3.4';
+    const VERSION = '0.3.6';
 
     const FONT_BASE =
         'https://static.spektrum.de/js_css/assets/fonts/custom/';
@@ -66,52 +66,83 @@
 
     function createExportButton() {
 
-        if (document.getElementById('sdw-author-export-button')) {
+        if (document.getElementById('sdw-author-export-controls')) {
             return;
         }
 
-        const button = document.createElement('button');
+        // Separate Shadow DOM avoids CMS light/dark-mode button rules.
+        const host = document.createElement('div');
+        host.id = 'sdw-author-export-controls';
+        const shadow = host.attachShadow({mode: 'open'});
 
+        const style = document.createElement('style');
+        style.textContent = `
+            :host {
+                all: initial;
+                position: fixed;
+                right: 18px;
+                bottom: 18px;
+                z-index: 2147483647;
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 8px;
+                color-scheme: light;
+                font: 14px Arial, sans-serif;
+            }
+            #sdw-author-export-button {
+                all: unset;
+                box-sizing: border-box;
+                display: block;
+                padding: 11px 16px;
+                border: 0;
+                border-radius: 6px;
+                background: #222 !important;
+                color: #fff !important;
+                -webkit-text-fill-color: #fff !important;
+                font: bold 14px Arial, sans-serif;
+                cursor: pointer;
+                box-shadow: 0 2px 10px rgba(0,0,0,.28);
+                white-space: nowrap;
+            }
+            #sdw-author-export-button:hover {
+                background: #444 !important;
+            }
+            #sdw-author-export-button:focus-visible {
+                outline: 3px solid #d58b00;
+                outline-offset: 3px;
+            }
+            #sdw-author-export-options {
+                box-sizing: border-box;
+                padding: 8px 12px;
+                background: #fff;
+                color: #222;
+                border: 1px solid #bbb;
+                border-radius: 4px;
+                font: 14px Arial, sans-serif;
+                white-space: nowrap;
+            }
+            #sdw-author-export-options label { cursor: pointer; }
+            #sdw-author-export-options input { vertical-align: middle; accent-color: #235b6c; }
+        `;
+        shadow.appendChild(style);
+
+        const options = document.createElement('div');
+        options.id = 'sdw-author-export-options';
+        const label = document.createElement('label');
+        const withComments = document.createElement('input');
+        withComments.type = 'checkbox';
+        withComments.checked = true;
+        withComments.id = 'sdw-author-with-comments';
+        label.append(withComments, document.createTextNode(' Mit Kommentarfunktion'));
+        options.appendChild(label);
+
+        const button = document.createElement('button');
         button.id = 'sdw-author-export-button';
         button.type = 'button';
         button.textContent = 'Autorenansicht speichern';
 
-        Object.assign(button.style, {
-            position: 'fixed',
-            right: '18px',
-            bottom: '18px',
-            zIndex: '2147483647',
-            padding: '11px 16px',
-            border: '0',
-            borderRadius: '6px',
-            background: '#222',
-            color: '#fff',
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '14px',
-            fontWeight: 'bold',
-            cursor: 'pointer',
-            boxShadow: '0 2px 10px rgba(0,0,0,.28)'
-        });
-
-        const options = document.createElement('div');
-        Object.assign(options.style, {position: 'fixed', right: '18px', bottom: '70px', zIndex: '2147483647', padding: '8px 12px', background: '#fff', color: '#222', border: '1px solid #bbb', borderRadius: '4px', font: '14px Arial,sans-serif'});
-        const label = document.createElement('label');
-        const withComments = document.createElement('input');
-        withComments.type = 'checkbox'; withComments.checked = true;
-        withComments.id = 'sdw-author-with-comments';
-        label.append(withComments, document.createTextNode(' Mit Kommentarfunktion'));
-        options.appendChild(label); document.body.appendChild(options);
-
-        button.style.setProperty('background-color', '#222', 'important');
-        button.style.setProperty('color', '#fff', 'important');
-
-        button.addEventListener('mouseenter', () => {
-            button.style.setProperty('background-color', '#444', 'important');
-        });
-
-        button.addEventListener('mouseleave', () => {
-            button.style.setProperty('background-color', '#222', 'important');
-        });
+        shadow.append(options, button);
 
         button.addEventListener('click', async () => {
 
@@ -151,7 +182,7 @@
             }
         });
 
-        document.body.appendChild(button);
+        document.body.appendChild(host);
     }
 
 
