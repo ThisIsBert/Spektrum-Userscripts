@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spektrum SixCMS – Bilder-Batch (Zwei-Tab)
 // @namespace    https://www.spektrum.de/
-// @version      0.2.8
+// @version      0.2.9
 // @description  Legt mehrere Bilder in SixCMS an; Start aus dem Bildercontainer oder anderen CMS-Containern ueber einen separaten Batch-Tab.
 // @author       Jan Dönges / OpenAI
 // @match        https://www.spektrum.de/sixcms/admin/content/*
@@ -27,7 +27,7 @@ function initArticleLauncher() {
   button.textContent = 'Batch-Bilder';
   button.title = 'Bildercontainer und Batch-Oberflaeche oeffnen (Bilder werden nicht automatisch dem Artikel zugewiesen)';
   Object.assign(button.style, {
-    position: 'fixed', top: '9px', right: '92px', zIndex: '2147483640',
+    position: 'fixed', top: '82px', left: '16px', zIndex: '2147483640',
     border: '1px solid rgba(255,255,255,.28)', borderRadius: '3px',
     padding: '5px 10px', background: '#444759', color: '#fff',
     cursor: 'pointer', boxShadow: 'none', fontFamily: 'Arial, Helvetica, sans-serif',
@@ -37,6 +37,68 @@ function initArticleLauncher() {
   button.addEventListener('mouseleave', () => { button.style.background = '#444759'; });
   button.addEventListener('click', openBatchFromArticle);
   document.body.append(button);
+  enableArticleLauncherDragging(button);
+}
+function enableArticleLauncherDragging(button) {
+  const storageKey = 'sdw-sixcms-batch-article-button-position';
+  const limit = (value, max) => Math.max(8, Math.min(value, Math.max(8, max)));
+  function setPosition(left, top) {
+    button.style.left = limit(left, window.innerWidth - button.offsetWidth - 8) + 'px';
+    button.style.top = limit(top, window.innerHeight - button.offsetHeight - 8) + 'px';
+  }
+  button.style.touchAction = 'none';
+  button.style.userSelect = 'none';
+  button.title += ' – zum Verschieben ziehen';
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(storageKey) || 'null');
+    if (Number.isFinite(saved?.left) && Number.isFinite(saved?.top)) {
+      setPosition(saved.left, saved.top);
+    } else {
+      setPosition(16, 82);
+    }
+  } catch { setPosition(16, 82); }
+  let drag = null;
+  let suppressClick = false;
+  button.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) { return; }
+    const rect = button.getBoundingClientRect();
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top, moved: false };
+    button.setPointerCapture?.(event.pointerId);
+  });
+  button.addEventListener('pointermove', (event) => {
+    if (!drag || drag.id !== event.pointerId) { return; }
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 5) { return; }
+    drag.moved = true;
+    setPosition(drag.left + dx, drag.top + dy);
+    event.preventDefault();
+  });
+  button.addEventListener('pointerup', (event) => {
+    if (!drag || drag.id !== event.pointerId) { return; }
+    if (drag.moved) {
+      suppressClick = true;
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify({
+          left: button.getBoundingClientRect().left,
+          top: button.getBoundingClientRect().top,
+        }));
+      } catch { /* Speicherzugriff optional */ }
+      window.setTimeout(() => { suppressClick = false; }, 0);
+    }
+    drag = null;
+  });
+  button.addEventListener('pointercancel', () => { drag = null; });
+  button.addEventListener('click', (event) => {
+    if (!suppressClick) { return; }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    suppressClick = false;
+  }, true);
+  window.addEventListener('resize', () => {
+    const rect = button.getBoundingClientRect();
+    setPosition(rect.left, rect.top);
+  });
 }
 function openBatchFromArticle() {
   // Beide Tabs muessen direkt im Benutzerklick geoeffnet werden:
