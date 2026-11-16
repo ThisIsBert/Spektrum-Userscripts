@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         Spektrum CMS – Autorenansicht exportieren
 // @namespace    https://www.spektrum.de/
-// @version      0.3.7
+// @version      0.3.8
 // @description  Exportiert Artikel mit eingebetteten Bildern, optionaler Kommentarfunktion und PDF-Druckansicht.
 // @match        https://www.spektrum.de/sixcms/detail.php*
+// @match        https://www.spektrum.de/sixcms/admin/content/list.php*
 // @grant        GM_xmlhttpRequest
 // @connect      static.spektrum.de
 // @connect      spektrum.de
@@ -16,7 +17,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '0.3.7';
+    const VERSION = '0.3.8';
 
     const FONT_BASE =
         'https://static.spektrum.de/js_css/assets/fonts/custom/';
@@ -54,11 +55,293 @@
         }
     ];
 
+    if (location.pathname === '/sixcms/admin/content/list.php') {
+        initBatchList();
+        return;
+    }
+
     if (!document.querySelector('#main article.content')) {
         return;
     }
 
-    createExportButton();
+    if (new URLSearchParams(location.search).get('sdw_batch') === '1' &&
+        window.parent !== window) {
+        initBatchResponder();
+    } else {
+        createExportButton();
+    }
+
+
+    // ============================================================
+    // STAPEL-EXPORT AUS DER CMS-ERGEBNISLISTE
+    // ============================================================
+
+    function initBatchList() {
+        function mount() {
+            const list = document.querySelector('ul.cs6AdminListResultBlock');
+            if (!list) return false;
+            if (document.getElementById('sdw-batch-toolbar')) return true;
+
+            const rows = [];
+            list.querySelectorAll('li.cs6AdminListResultElement').forEach(li => {
+                const source = li.querySelector('a.cs6AdminFallbackLink[href]');
+                if (!source) return;
+                const url = new URL(source.href, location.href);
+                const id = url.searchParams.get('id');
+                const areaId = url.searchParams.get('area_id');
+                if (!id || !/^\d+$/.test(id) || !areaId) return;
+
+                const titleLink = li.querySelector(
+                    '.article-details .title a, .cs6AdminListResultEntry a[href*="/sixcms/admin/content/switch.php"]'
+                );
+                const title = (titleLink?.textContent || 'Eintrag ' + id).trim();
+                const wrapper = document.createElement('label');
+                wrapper.className = 'sdw-batch-row';
+                wrapper.title = 'Für den HTML-Sammelexport auswählen';
+                const check = document.createElement('input');
+                check.type = 'checkbox';
+                check.className = 'sdw-batch-pick';
+                // Onlineartikel automatisch vorselektieren; andere Eintragstypen bleiben wählbar.
+                check.checked = areaId === '590';
+                wrapper.append(check, document.createTextNode(' Export'));
+                wrapper.addEventListener('click', event => event.stopPropagation());
+                wrapper.addEventListener('keydown', event => event.stopPropagation());
+                (li.querySelector('.cs6AdminListResultInnerShell') || li).prepend(wrapper);
+                rows.push({id, areaId, title, check});
+            });
+
+            if (!rows.length) return false;
+
+            const style = document.createElement('style');
+            style.textContent =
+                '#sdw-batch-toolbar{position:sticky;top:0;z-index:1000;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px;background:#253847!important;color:#fff!important;border:2px solid #6196b1;font:14px Arial,sans-serif}' +
+                '#sdw-batch-toolbar button{background:#fff!important;color:#17364a!important;border:1px solid #7798aa;border-radius:4px;padding:7px 10px;font:600 13px Arial,sans-serif;cursor:pointer}' +
+                '#sdw-batch-toolbar button:disabled{opacity:.55;cursor:wait}' +
+                '#sdw-batch-toolbar label{color:#fff!important;display:inline-flex;align-items:center;gap:4px}' +
+                '#sdw-batch-status{flex-basis:100%;font-size:12px;white-space:normal;line-height:1.4}' +
+                '.sdw-batch-row{display:inline-flex;align-items:center;gap:2px;padding:4px 8px;margin:3px 7px 3px 3px;background:#dbe7ee!important;color:#182d39!important;border-radius:4px;font:600 12px Arial,sans-serif;cursor:pointer}' +
+                '.sdw-batch-row input{margin:0;accent-color:#235b6c}';
+            document.head.appendChild(style);
+
+            const toolbar = document.createElement('div');
+            toolbar.id = 'sdw-batch-toolbar';
+            const chooseAll = document.createElement('button');
+            chooseAll.type = 'button';
+            chooseAll.textContent = 'Alle auswählen';
+            const chooseNone = document.createElement('button');
+            chooseNone.type = 'button';
+            chooseNone.textContent = 'Keine auswählen';
+            const commentsLabel = document.createElement('label');
+            const comments = document.createElement('input');
+            comments.type = 'checkbox';
+            comments.checked = true;
+            commentsLabel.append(comments, document.createTextNode(' Kommentare'));
+            const exportButton = document.createElement('button');
+            exportButton.type = 'button';
+            exportButton.textContent = 'Auswahl als eine HTML-Datei exportieren';
+            const count = document.createElement('span');
+            const status = document.createElement('div');
+            status.id = 'sdw-batch-status';
+            status.textContent = 'Die Auswahl bezieht sich auf die aktuell angezeigte CMS-Ergebnisseite.';
+            const updateCount = () => {
+                count.textContent = rows.filter(row => row.check.checked).length + ' ausgewählt';
+            };
+            rows.forEach(row => row.check.addEventListener('change', updateCount));
+            chooseAll.addEventListener('click', () => {
+                rows.forEach(row => { row.check.checked = true; });
+                updateCount();
+            });
+            chooseNone.addEventListener('click', () => {
+                rows.forEach(row => { row.check.checked = false; });
+                updateCount();
+            });
+            toolbar.append(chooseAll, chooseNone, commentsLabel, exportButton, count, status);
+            list.before(toolbar);
+            updateCount();
+
+            exportButton.addEventListener('click', async () => {
+                const selected = rows.filter(row => row.check.checked);
+                if (!selected.length) {
+                    status.textContent = 'Bitte mindestens einen Artikel auswählen.';
+                    return;
+                }
+                exportButton.disabled = true;
+                chooseAll.disabled = true;
+                chooseNone.disabled = true;
+                comments.disabled = true;
+                rows.forEach(row => { row.check.disabled = true; });
+                const results = [];
+                const failures = [];
+                try {
+                    for (let index = 0; index < selected.length; index++) {
+                        const row = selected[index];
+                        const prefix = (index + 1) + '/' + selected.length + ': ' + row.title;
+                        status.textContent = prefix + ' – Vorschau wird geöffnet …';
+                        try {
+                            const exported = await exportBatchPreview(row, comments.checked,
+                                step => { status.textContent = prefix + ' – ' + step; });
+                            results.push(exported);
+                        } catch (error) {
+                            console.warn('[Autorenansicht Batch]', row.id, error);
+                            failures.push(row.title + ' (' + (error?.message || error) + ')');
+                        }
+                    }
+                    if (!results.length) {
+                        throw new Error('Kein Artikel ließ sich exportieren. Bitte prüfen, ob die CMS-Vorschau im Browser aufrufbar ist.');
+                    }
+                    status.textContent = 'Erzeuge HTML-Sammeldatei …';
+                    downloadHtml(buildCollectionHtml(results),
+                        'Spektrum_Autorenansichten_' + results.length + '_Artikel.html');
+                    status.textContent = results.length + ' Artikel gespeichert.' +
+                        (failures.length ? ' Fehlgeschlagen: ' + failures.join(' | ') : '');
+                } catch (error) {
+                    status.textContent = 'Export fehlgeschlagen: ' + (error?.message || error);
+                } finally {
+                    exportButton.disabled = false;
+                    chooseAll.disabled = false;
+                    chooseNone.disabled = false;
+                    comments.disabled = false;
+                    rows.forEach(row => { row.check.disabled = false; });
+                }
+            });
+            return true;
+        }
+
+        if (mount()) return;
+        const observer = new MutationObserver(() => {
+            if (mount()) observer.disconnect();
+        });
+        observer.observe(document.documentElement, {childList: true, subtree: true});
+    }
+
+    function exportBatchPreview(row, withComments, setStatus) {
+        return new Promise((resolve, reject) => {
+            const iframe = document.createElement('iframe');
+            iframe.style.cssText = 'position:fixed;left:-12000px;top:0;width:1200px;height:900px;border:0;pointer-events:none';
+            iframe.setAttribute('aria-hidden', 'true');
+            const token = Date.now().toString(36) + Math.random().toString(36).slice(2);
+            let finished = false;
+            const timer = setTimeout(() => finish(new Error('Zeitüberschreitung beim Artikel-Export.')), 180000);
+            function cleanup() {
+                clearTimeout(timer);
+                window.removeEventListener('message', onMessage);
+                iframe.remove();
+            }
+            function finish(error, result) {
+                if (finished) return;
+                finished = true;
+                cleanup();
+                if (error) reject(error);
+                else resolve(result);
+            }
+            function onMessage(event) {
+                if (event.origin !== location.origin || event.source !== iframe.contentWindow) return;
+                const data = event.data;
+                if (!data || data.token !== token) return;
+                if (data.type === 'sdw-batch-ready') {
+                    iframe.contentWindow.postMessage({
+                        type: 'sdw-batch-export-request', token, withComments
+                    }, location.origin);
+                } else if (data.type === 'sdw-batch-progress') {
+                    setStatus(data.status);
+                } else if (data.type === 'sdw-batch-result') {
+                    finish(null, {title: data.title || row.title, html: data.html});
+                } else if (data.type === 'sdw-batch-error') {
+                    finish(new Error(data.error || 'Unbekannter Fehler'));
+                }
+            }
+            window.addEventListener('message', onMessage);
+            const url = new URL('/sixcms/detail.php', location.origin);
+            url.searchParams.set('id', row.id);
+            url.searchParams.set('area_id', row.areaId);
+            url.searchParams.set('sdw_batch', '1');
+            url.searchParams.set('sdw_batch_token', token);
+            iframe.src = url.href;
+            document.body.appendChild(iframe);
+        });
+    }
+
+    function initBatchResponder() {
+        const params = new URLSearchParams(location.search);
+        const token = params.get('sdw_batch_token');
+        if (!token) return;
+        let running = false;
+        window.addEventListener('message', async event => {
+            const data = event.data;
+            if (event.source !== window.parent || event.origin !== location.origin ||
+                data?.type !== 'sdw-batch-export-request' || data.token !== token || running) return;
+            running = true;
+            try {
+                const exported = await exportArticle(Boolean(data.withComments), status => {
+                    window.parent.postMessage({type: 'sdw-batch-progress', token, status}, location.origin);
+                }, {download: false});
+                window.parent.postMessage({
+                    type: 'sdw-batch-result', token, html: exported.html, title: exported.title
+                }, location.origin);
+            } catch (error) {
+                window.parent.postMessage({
+                    type: 'sdw-batch-error', token, error: error?.message || String(error)
+                }, location.origin);
+            }
+        });
+        window.parent.postMessage({type: 'sdw-batch-ready', token}, location.origin);
+    }
+
+    // In der Sammeldatei bleibt jede Autorenansicht ein eigenständiges
+    // Dokument. So funktionieren auch die bestehenden Kommentar-/PDF-Skripte.
+    function buildCollectionHtml(entries) {
+        const intro = '<!doctype html><html lang="de"><head><meta charset="utf-8">' +
+            '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+            '<meta name="color-scheme" content="light">' +
+            '<title>Spektrum – Autorenansichten</title><style>' +
+            '*{box-sizing:border-box}html,body{height:100%;margin:0}' +
+            'body{font:15px/1.5 Arial,sans-serif;color:#222;background:#f5f6f7}' +
+            '.collection{display:grid;grid-template-columns:270px minmax(0,1fr);height:100vh}' +
+            'nav{overflow:auto;background:#fff;border-right:1px solid #bbb;padding:16px}' +
+            'nav h1{font-size:19px;line-height:1.25;margin:0 0 6px}' +
+            'nav p{font-size:12px;color:#666;margin:0 0 12px}' +
+            'nav button{display:block;width:100%;text-align:left;padding:10px;margin:3px 0;' +
+            'border:1px solid #ddd;border-radius:5px;background:#fff;color:#222;cursor:pointer;' +
+            'font:14px/1.4 Arial,sans-serif;overflow-wrap:anywhere}' +
+            'nav button[aria-current="true"]{background:#e3f0f5;border-color:#235b6c;font-weight:bold}' +
+            '#sdw-batch-viewer{min-width:0;min-height:0;position:relative}' +
+            '#sdw-batch-viewer iframe{width:100%;height:100%;border:0;background:#fff}' +
+            '#sdw-batch-viewer iframe[hidden]{display:none}' +
+            '@media(max-width:700px){.collection{grid-template-columns:1fr;grid-template-rows:170px minmax(0,1fr)}' +
+            'nav{border-right:0;border-bottom:1px solid #bbb;padding:10px}nav button{display:inline-block;width:auto;max-width:250px;margin-right:5px}}' +
+            '</style></head><body><div class="collection"><nav><h1>Autorenansichten</h1>' +
+            '<p>' + entries.length + ' Artikel · Zur Auswahl einen Titel anklicken.</p>';
+        const items = entries.map((entry, index) =>
+            '<button type="button" data-sdw-index="' + index + '">' +
+            (index + 1) + '. ' + escapeHtml(entry.title) + '</button>'
+        ).join('');
+        const templates = entries.map((entry, index) =>
+            '<template id="sdw-batch-document-' + index + '">' + escapeHtml(entry.html) + '</template>'
+        ).join('');
+        const runtime = '(' + function collectionRuntime() {
+            'use strict';
+            const viewer = document.getElementById('sdw-batch-viewer');
+            const buttons = Array.from(document.querySelectorAll('nav [data-sdw-index]'));
+            const frames = new Map();
+            function show(index) {
+                buttons.forEach((button, number) =>
+                    button.setAttribute('aria-current', number === index ? 'true' : 'false'));
+                for (const [key, frame] of frames) frame.hidden = key !== index;
+                if (!frames.has(index)) {
+                    const template = document.getElementById('sdw-batch-document-' + index);
+                    const frame = document.createElement('iframe');
+                    frame.title = buttons[index].textContent;
+                    frame.srcdoc = template.content.textContent;
+                    viewer.appendChild(frame);
+                    frames.set(index, frame);
+                }
+            }
+            buttons.forEach((button, index) => button.addEventListener('click', () => show(index)));
+            show(0);
+        }.toString() + ')();';
+        return intro + items + '</nav><main id="sdw-batch-viewer"></main></div>' +
+            templates + '<script>' + runtime.replace(/<\/script/gi, '<\\/script') + '</' + 'script></body></html>';
+    }
 
     // ============================================================
     // BUTTON
@@ -190,7 +473,7 @@
     // EXPORT
     // ============================================================
 
-    async function exportArticle(withComments, setStatus) {
+    async function exportArticle(withComments, setStatus, options) {
 
         const embedImages = true;
 
@@ -303,10 +586,11 @@
                 withComments
             });
 
-        downloadHtml(
-            html,
-            makeFilename(title)
-        );
+        const filename = makeFilename(title);
+        if (!options || options.download !== false) {
+            downloadHtml(html, filename);
+        }
+        return {html, filename, title};
     }
 
 
