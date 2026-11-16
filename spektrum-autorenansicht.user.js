@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         Spektrum CMS – Autorenansicht exportieren
 // @namespace    https://www.spektrum.de/
-// @version      0.3.7
+// @version      0.3.10
 // @description  Exportiert Artikel mit eingebetteten Bildern, optionaler Kommentarfunktion und PDF-Druckansicht.
 // @match        https://www.spektrum.de/sixcms/detail.php*
+// @match        https://www.spektrum.de/sixcms/admin/content*
 // @grant        GM_xmlhttpRequest
 // @connect      static.spektrum.de
 // @connect      spektrum.de
@@ -16,7 +17,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '0.3.7';
+    const VERSION = '0.3.10';
 
     const FONT_BASE =
         'https://static.spektrum.de/js_css/assets/fonts/custom/';
@@ -54,11 +55,593 @@
         }
     ];
 
+    if (document.getElementById('id6AdminFrameListFrame') &&
+        document.getElementById('id6AdminFrameDetailFrame')) {
+        initBatchDashboard();
+        return;
+    }
+
     if (!document.querySelector('#main article.content')) {
         return;
     }
 
+    initBatchResponder();
     createExportButton();
+
+
+    // ============================================================
+    // STAPEL-EXPORT AUS DER ZWEI-FRAME-CMS-ANSICHT
+    // ============================================================
+
+    function initBatchDashboard() {
+        if (document.getElementById('sdw-batch-controls')) return;
+
+        const listFrame = document.getElementById('id6AdminFrameListFrame');
+        const detailFrame = document.getElementById('id6AdminFrameDetailFrame');
+        if (!listFrame || !detailFrame) return;
+
+        const host = document.createElement('div');
+        host.id = 'sdw-batch-controls';
+        const shadow = host.attachShadow({mode: 'open'});
+        const style = document.createElement('style');
+        style.textContent = 
+            ':host{all:initial;position:fixed;z-index:2147483647;left:12px;top:12px;' +
+            'font:13px/1.45 Arial,sans-serif;color-scheme:light}' +
+            ':host([data-collapsed="true"]) .box{display:none}' +
+            ':host([data-collapsed="false"]) .mini{display:none}' +
+            '.mini{width:27px;height:27px}' +
+            '.mini button{box-sizing:border-box;width:27px;height:27px;padding:0;' +
+            'border:1px solid #8b9296;border-radius:6px;background:#ebeff1;' +
+            'color:#36434b;opacity:.54;box-shadow:none;font:17px Arial,sans-serif;' +
+            'cursor:grab;touch-action:none;user-select:none;transition:opacity .15s}' +
+            '.mini button:hover,.mini button:focus-visible{opacity:1;background:#fff}' +
+            '.mini button:active{cursor:grabbing}' +
+            '.box{box-sizing:border-box;width:360px;max-width:calc(100vw - 16px);' +
+            'max-height:calc(100vh - 16px);overflow:auto;padding:12px 14px;' +
+            'background:#fff;color:#222;border:2px solid #235b6c;border-radius:8px;' +
+            'box-shadow:0 3px 16px #0005}' +
+            '.header{display:flex;gap:6px;justify-content:space-between;align-items:center;' +
+            'cursor:grab;touch-action:none;user-select:none;padding-bottom:2px}' +
+            '.header:active{cursor:grabbing}' +
+            '.header strong{font-size:15px;color:#222}' +
+            '.header .collapse{width:26px;height:26px;padding:0;background:#f3f5f6;' +
+            'color:#304e5c;border:1px solid #aebdc4;border-radius:4px;' +
+            'font:bold 20px Arial,sans-serif;line-height:20px;cursor:pointer}' +
+            '.header .collapse:hover{background:#e0edf3}' +
+            'p{margin:5px 0;color:#444}' +
+            'label{display:flex;align-items:center;gap:5px;margin:9px 0;cursor:pointer}' +
+            'input{accent-color:#235b6c}' +
+            '.actions{display:flex;flex-wrap:wrap;gap:7px}' +
+            '.actions button{font:600 13px Arial,sans-serif;padding:9px 11px;' +
+            'border-radius:5px;border:1px solid #235b6c;' +
+            'background:#235b6c;color:#fff;cursor:pointer}' +
+            '.actions button[disabled]{opacity:.5;cursor:wait}' +
+            '.actions button.secondary{background:#fff;color:#235b6c}' +
+            '.status{margin-top:9px;font-size:12px;max-height:125px;overflow:auto;' +
+            'white-space:pre-wrap;overflow-wrap:anywhere;color:#333}';
+
+        const mini = document.createElement('div');
+        mini.className = 'mini';
+        const miniButton = document.createElement('button');
+        miniButton.type = 'button';
+        miniButton.textContent = '▤';
+        miniButton.setAttribute('aria-label',
+            'Autorenansichten öffnen – Symbol ziehen, um es zu verschieben');
+        miniButton.title = 'Autorenansichten öffnen · Zum Verschieben ziehen';
+        mini.appendChild(miniButton);
+
+        const box = document.createElement('div');
+        box.className = 'box';
+        const header = document.createElement('div');
+        header.className = 'header';
+        header.title = 'Bedienfeld durch Ziehen verschieben';
+        const heading = document.createElement('strong');
+        heading.textContent = 'Autorenansichten als ZIP';
+        const collapseButton = document.createElement('button');
+        collapseButton.className = 'collapse';
+        collapseButton.type = 'button';
+        collapseButton.textContent = '−';
+        collapseButton.title = 'Bedienfeld einklappen';
+        collapseButton.setAttribute('aria-label', 'Bedienfeld einklappen');
+        header.append(heading, collapseButton);
+
+        const subtitle = document.createElement('p');
+        subtitle.textContent = 'Alle Treffer der aktuellen CMS-Suche, auch über mehrere Seiten.';
+        const label = document.createElement('label');
+        const withComments = document.createElement('input');
+        withComments.type = 'checkbox';
+        withComments.checked = true;
+        label.append(withComments, document.createTextNode(' Mit Kommentarfunktion'));
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        const startButton = document.createElement('button');
+        startButton.type = 'button';
+        startButton.textContent = 'Gesamte Suchliste exportieren';
+        const cancelButton = document.createElement('button');
+        cancelButton.type = 'button';
+        cancelButton.className = 'secondary';
+        cancelButton.textContent = 'Abbrechen';
+        cancelButton.disabled = true;
+        actions.append(startButton, cancelButton);
+        const status = document.createElement('div');
+        status.className = 'status';
+        status.setAttribute('role', 'status');
+        status.textContent = 'Bereit. Das CMS bleibt während des Exports geöffnet.';
+        box.append(header, subtitle, label, actions, status);
+        shadow.append(style, mini, box);
+        document.body.appendChild(host);
+
+        // Position und Klappzustand bleiben auch nach einem CMS-Neuladen erhalten.
+        const storageKey = 'sdw-autorenansicht-batch-panel-v1';
+        let saved = {};
+        try {
+            const value = JSON.parse(localStorage.getItem(storageKey));
+            if (value && typeof value === 'object') saved = value;
+        } catch (_) { /* Speicher kann durch Browserrichtlinien gesperrt sein. */ }
+
+        const initialX = Number.isFinite(saved.x) ? saved.x : 12;
+        const initialY = Number.isFinite(saved.y) ? saved.y :
+            Math.max(8, window.innerHeight - 330);
+        host.style.left = initialX + 'px';
+        host.style.top = initialY + 'px';
+
+        function clampPosition() {
+            const rect = host.getBoundingClientRect();
+            const x = Math.min(Math.max(8, rect.left),
+                Math.max(8, window.innerWidth - rect.width - 8));
+            const y = Math.min(Math.max(8, rect.top),
+                Math.max(8, window.innerHeight - rect.height - 8));
+            host.style.left = x + 'px';
+            host.style.top = y + 'px';
+        }
+
+        function saveLayout() {
+            try {
+                localStorage.setItem(storageKey, JSON.stringify({
+                    x: parseFloat(host.style.left),
+                    y: parseFloat(host.style.top),
+                    collapsed: host.dataset.collapsed === 'true'
+                }));
+            } catch (_) { /* Ohne Speicherung weiterhin frei beweglich. */ }
+        }
+
+        function setCollapsed(value) {
+            host.dataset.collapsed = String(value);
+            miniButton.setAttribute('aria-expanded', String(!value));
+            miniButton.setAttribute('aria-controls', 'sdw-batch-panel');
+            clampPosition();
+            saveLayout();
+        }
+
+        box.id = 'sdw-batch-panel';
+        setCollapsed(saved.collapsed === true);
+        collapseButton.addEventListener('click', () => setCollapsed(true));
+
+        // Verschieben über die Kopfzeile oder das kleine Symbol.
+        // Kurzes Antippen des Symbols klappt das Bedienfeld auf.
+        function enableDragging(handle, opensOnTap) {
+            let drag = null;
+            handle.addEventListener('pointerdown', event => {
+                if (event.button !== 0 || (event.target.closest('button') &&
+                    event.target !== miniButton)) return;
+                const rect = host.getBoundingClientRect();
+                drag = {
+                    id: event.pointerId,
+                    x: event.clientX,
+                    y: event.clientY,
+                    left: rect.left,
+                    top: rect.top,
+                    moved: false
+                };
+                handle.setPointerCapture(event.pointerId);
+                event.preventDefault();
+            });
+
+            handle.addEventListener('pointermove', event => {
+                if (!drag || drag.id !== event.pointerId) return;
+                const dx = event.clientX - drag.x;
+                const dy = event.clientY - drag.y;
+                if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+                drag.moved = true;
+                const width = host.getBoundingClientRect().width;
+                const height = host.getBoundingClientRect().height;
+                const left = Math.min(Math.max(8, drag.left + dx),
+                    Math.max(8, window.innerWidth - width - 8));
+                const top = Math.min(Math.max(8, drag.top + dy),
+                    Math.max(8, window.innerHeight - height - 8));
+                host.style.left = left + 'px';
+                host.style.top = top + 'px';
+            });
+
+            handle.addEventListener('pointerup', event => {
+                if (!drag || drag.id !== event.pointerId) return;
+                const moved = drag.moved;
+                drag = null;
+                if (handle.hasPointerCapture(event.pointerId)) {
+                    handle.releasePointerCapture(event.pointerId);
+                }
+                if (moved) saveLayout();
+                else if (opensOnTap) setCollapsed(false);
+            });
+            handle.addEventListener('pointercancel', () => { drag = null; });
+        }
+        enableDragging(miniButton, true);
+        enableDragging(header, false);
+        // Tastaturbedienung (Enter/Leertaste) erzeugt kein pointerup.
+        miniButton.addEventListener('click', event => {
+            if (event.detail === 0) setCollapsed(false);
+        });
+        window.addEventListener('resize', () => {
+            clampPosition();
+            saveLayout();
+        });
+
+        let cancelled = false;
+        cancelButton.addEventListener('click', () => {
+            cancelled = true;
+            cancelButton.disabled = true;
+            status.textContent = 'Abbruch angefordert. Der laufende Artikel wird noch fertiggestellt.';
+        });
+
+        startButton.addEventListener('click', async () => {
+            cancelled = false;
+            startButton.disabled = true;
+            withComments.disabled = true;
+            cancelButton.disabled = false;
+            const successes = [];
+            const failures = [];
+            try {
+                status.textContent = 'Ermittle sämtliche Seiten der aktuellen CMS-Suchliste …';
+                const items = await collectBatchItems(listFrame, message => {
+                    status.textContent = message;
+                }, () => cancelled);
+                if (!items.length) throw new Error('Die Suchliste enthält keine exportierbaren Einträge.');
+                status.textContent = items.length + ' Treffer gefunden. Starte Export …';
+
+                for (let index = 0; index < items.length; index++) {
+                    if (cancelled) break;
+                    const item = items[index];
+                    const prefix = (index + 1) + '/' + items.length + ': ' + item.title;
+                    status.textContent = prefix + '\nLade Artikelvorschau …';
+                    try {
+                        const exported = await exportViaCmsPreview(
+                            detailFrame, item, withComments.checked,
+                            phase => { status.textContent = prefix + '\n' + phase; }
+                        );
+                        const uniqueName = item.id + '_' + exported.filename;
+                        successes.push({name: uniqueName, content: exported.html});
+                    } catch (error) {
+                        console.warn('[Autorenansicht Batch]', item.id, error);
+                        failures.push(item.id + ' ' + item.title + ': ' +
+                            (error?.message || String(error)));
+                    }
+                }
+
+                if (!successes.length) {
+                    throw new Error('Kein Artikel konnte exportiert werden. ' +
+                        failures.slice(0, 3).join(' | '));
+                }
+                if (failures.length || cancelled) {
+                    successes.push({
+                        name: 'Exportprotokoll.txt',
+                        content: 'Spektrum Autorenansichten – Batch-Export\n' +
+                            'Erfolgreich: ' + (successes.length) + ' von ' + items.length + '\n' +
+                            (cancelled ? 'Vorgang vorzeitig abgebrochen.\n' : '') +
+                            (failures.length ? '\nFehler:\n' + failures.join('\n') : '')
+                    });
+                }
+                const htmlCount = successes.filter(entry => entry.name.endsWith('.html')).length;
+                status.textContent = 'Packe ' + htmlCount + ' HTML-Dateien in das ZIP-Archiv …';
+                const zip = makeStoredZip(successes);
+                downloadBatchBlob(zip, 'Spektrum_Autorenansichten_' + htmlCount + '_Artikel.zip');
+                status.textContent = htmlCount + ' HTML-Dateien als ZIP gespeichert.' +
+                    (failures.length ? '\n' + failures.length +
+                        ' fehlgeschlagen; Details in Exportprotokoll.txt.' : '') +
+                    (cancelled ? '\nExport vorzeitig beendet.' : '');
+            } catch (error) {
+                status.textContent = 'Export nicht abgeschlossen: ' +
+                    (error?.message || String(error));
+                console.error('[Autorenansicht Batch]', error);
+            } finally {
+                startButton.disabled = false;
+                withComments.disabled = false;
+                cancelButton.disabled = true;
+            }
+        });
+    }
+
+    async function collectBatchItems(listFrame, setStatus, isCancelled) {
+        let listDoc;
+        let listUrl;
+        try {
+            listDoc = listFrame.contentDocument;
+            listUrl = new URL(listFrame.contentWindow.location.href);
+        } catch (_) {
+            throw new Error('Auf das linke Suchlisten-Frame kann nicht zugegriffen werden.');
+        }
+        if (!listDoc || !listDoc.querySelector('ul.cs6AdminListResultBlock')) {
+            throw new Error('Links ist derzeit keine geladene CMS-Suchergebnisliste sichtbar.');
+        }
+        const firstLink = listDoc.querySelector(
+            '#id6AdminResultInfo_jumpbar a[data-page~="first_page"]'
+        );
+        const firstUrl = firstLink
+            ? new URL(firstLink.getAttribute('href'), listUrl)
+            : new URL(listUrl.href);
+        if (!firstLink) firstUrl.searchParams.set('skip', '0');
+
+        const seenPages = new Set();
+        const seenItems = new Map();
+        let pageUrl = firstUrl;
+        let pageNumber = 0;
+        while (pageUrl && pageNumber < 2000) {
+            if (isCancelled()) break;
+            if (seenPages.has(pageUrl.href)) throw new Error('Seitennavigation enthält eine Schleife.');
+            seenPages.add(pageUrl.href);
+            pageNumber++;
+            let page;
+            if (pageUrl.href === listUrl.href) {
+                page = listDoc;
+            } else {
+                const response = await fetch(pageUrl.href, {
+                    credentials: 'same-origin', cache: 'no-store'
+                });
+                if (!response.ok) {
+                    throw new Error('Ergebnisseite ' + pageNumber +
+                        ' konnte nicht geladen werden (HTTP ' + response.status + ').');
+                }
+                page = new DOMParser().parseFromString(await response.text(), 'text/html');
+            }
+            const elements = [...page.querySelectorAll('li.cs6AdminListResultElement')];
+            if (!elements.length) {
+                throw new Error('Keine Treffer auf Ergebnisseite ' + pageNumber +
+                    ' – möglicherweise ist die CMS-Sitzung abgelaufen.');
+            }
+            for (const li of elements) {
+                const fallback = li.querySelector('a.cs6AdminFallbackLink[href]');
+                const opener = li.querySelector(
+                    '.cs6AdminPseudoLink[data-href], a[href*="/sixcms/admin/content/switch.php"]'
+                );
+                let entryUrl;
+                try {
+                    entryUrl = new URL(fallback?.getAttribute('href') ||
+                        opener?.getAttribute('data-href') ||
+                        opener?.getAttribute('href'), pageUrl);
+                } catch (_) { continue; }
+                const id = entryUrl.searchParams.get('id');
+                const areaId = entryUrl.searchParams.get('area_id');
+                if (!id || !/^\d+$/.test(id) || !areaId) continue;
+                const titleLink = li.querySelector(
+                    '.article-details .title a, .cs6AdminListResultEntry ' +
+                    'a[href*="/sixcms/admin/content/switch.php"]'
+                );
+                const title = (titleLink?.textContent || 'Eintrag ' + id)
+                    .trim().replace(/\s+/g, ' ');
+                if (!seenItems.has(id)) {
+                    seenItems.set(id, {id, areaId, title});
+                }
+            }
+            setStatus('Suchliste: ' + seenItems.size +
+                ' Treffer auf ' + pageNumber + ' Ergebnisseite(n) erfasst …');
+            const nextLink = page.querySelector(
+                '#id6AdminResultInfo_jumpbar a[data-page~="next_page"]'
+            );
+            pageUrl = nextLink
+                ? new URL(nextLink.getAttribute('href'), pageUrl) : null;
+        }
+        if (pageUrl && !isCancelled()) {
+            throw new Error('Zu viele Ergebnisseiten. Vorgang vorsichtshalber beendet.');
+        }
+        return [...seenItems.values()];
+    }
+
+    function exportViaCmsPreview(detailFrame, item, withComments, setStatus) {
+        return new Promise((resolve, reject) => {
+            let done = false;
+            let requested = false;
+            const token = Date.now().toString(36) +
+                Math.random().toString(36).slice(2);
+            const timer = setTimeout(() => {
+                finish(new Error('Die Vorschau oder der Export hat nicht rechtzeitig geantwortet.'));
+            }, 180000);
+
+            function finish(error, result) {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                window.removeEventListener('message', onMessage);
+                if (error) reject(error);
+                else resolve(result);
+            }
+
+            function isWithinDetail(source) {
+                try {
+                    let current = source;
+                    for (let depth = 0; depth < 12; depth++) {
+                        if (current === detailFrame.contentWindow) return true;
+                        if (!current || current === window ||
+                            current === current.parent) return false;
+                        current = current.parent;
+                    }
+                } catch (_) { return false; }
+                return false;
+            }
+
+            function onMessage(event) {
+                if (done || event.origin !== location.origin ||
+                    !isWithinDetail(event.source)) return;
+                const data = event.data;
+                if (!data || data.articleId !== item.id) return;
+                if (data.type === 'sdw-batch-ready' && !requested) {
+                    requested = true;
+                    setStatus('Vorschau geladen; erstelle HTML-Datei …');
+                    event.source.postMessage({
+                        type: 'sdw-batch-export-request',
+                        articleId: item.id, token, withComments
+                    }, location.origin);
+                } else if (data.token === token && data.type === 'sdw-batch-progress') {
+                    setStatus(data.status);
+                } else if (data.token === token && data.type === 'sdw-batch-result') {
+                    if (typeof data.html !== 'string' || !data.html.startsWith('<!doctype html>')) {
+                        finish(new Error('Ungültiges HTML aus der Artikelvorschau erhalten.'));
+                    } else {
+                        finish(null, {title: data.title, filename: data.filename, html: data.html});
+                    }
+                } else if (data.token === token && data.type === 'sdw-batch-error') {
+                    finish(new Error(data.error || 'Vorschau meldet einen unbekannten Fehler.'));
+                }
+            }
+            window.addEventListener('message', onMessage);
+
+            // Identisch zur üblichen CMS-Detailansicht: rechte Seite lädt
+            // switch.php mit ausgewählter Artikel-ID und Preview-Tab.
+            const url = new URL('/sixcms/admin/content/switch.php', location.origin);
+            const current = new URL(detailFrame.getAttribute('src'), location.href);
+            const list = document.getElementById('id6AdminFrameListFrame');
+            let listUrl = null;
+            try { listUrl = new URL(list.contentWindow.location.href); } catch (_) {}
+            const widget = listUrl?.searchParams.get('widget') ||
+                current.searchParams.get('widget');
+            if (widget) url.searchParams.set('widget', widget);
+            url.searchParams.set('id', item.id);
+            url.searchParams.set('area_id', item.areaId);
+            url.searchParams.set('show', 'detail');
+            url.searchParams.set('show_card', 'preview');
+            detailFrame.src = url.href;
+        });
+    }
+
+    // Auf der eingebetteten Artikelvorschau anmelden und den bestehenden
+    // Einzelexport auf Anforderung an das äußere CMS-Fenster zurückgeben.
+    function initBatchResponder() {
+        if (window.top === window) return;
+        const articleId = new URLSearchParams(location.search).get('id');
+        if (!articleId) return;
+        let busy = false;
+        window.addEventListener('message', async event => {
+            const data = event.data;
+            if (event.origin !== location.origin || event.source !== window.top ||
+                data?.type !== 'sdw-batch-export-request' ||
+                data.articleId !== articleId || busy) return;
+            busy = true;
+            try {
+                const exported = await exportArticle(Boolean(data.withComments), status => {
+                    window.top.postMessage({
+                        type: 'sdw-batch-progress', articleId, token: data.token, status
+                    }, location.origin);
+                }, {download: false});
+                window.top.postMessage({
+                    type: 'sdw-batch-result', articleId, token: data.token,
+                    title: exported.title, filename: exported.filename, html: exported.html
+                }, location.origin);
+            } catch (error) {
+                window.top.postMessage({
+                    type: 'sdw-batch-error', articleId, token: data.token,
+                    error: error?.message || String(error)
+                }, location.origin);
+            } finally {
+                busy = false;
+            }
+        });
+        window.top.postMessage({type: 'sdw-batch-ready', articleId}, location.origin);
+    }
+
+    // ZIP ohne externe Bibliothek. Methode 0 (STORE) ist breit kompatibel.
+    // Bilder sind bereits als Daten-URLs in den HTML-Dateien enthalten.
+    function makeStoredZip(entries) {
+        if (!entries.length || entries.length > 65535) {
+            throw new Error('Ungültige Anzahl von ZIP-Dateien.');
+        }
+        const encoder = new TextEncoder();
+        const crcTable = new Uint32Array(256);
+        for (let n = 0; n < 256; n++) {
+            let c = n;
+            for (let k = 0; k < 8; k++) {
+                c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+            }
+            crcTable[n] = c >>> 0;
+        }
+        function checksum(bytes) {
+            let crc = 0xffffffff;
+            for (const byte of bytes) {
+                crc = crcTable[(crc ^ byte) & 255] ^ (crc >>> 8);
+            }
+            return (crc ^ 0xffffffff) >>> 0;
+        }
+        const now = new Date();
+        const dosTime = (now.getHours() << 11) |
+            (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2);
+        const dosDate = ((Math.max(1980, now.getFullYear()) - 1980) << 9) |
+            ((now.getMonth() + 1) << 5) | now.getDate();
+        const local = [];
+        const central = [];
+        let offset = 0;
+        let centralSize = 0;
+        for (const entry of entries) {
+            const nameBytes = encoder.encode(entry.name);
+            const bytes = encoder.encode(entry.content);
+            if (nameBytes.length > 65535 || bytes.length > 0xffffffff ||
+                offset + bytes.length + nameBytes.length + 30 > 0xffffffff) {
+                throw new Error('ZIP-Datei überschreitet das unterstützte Größenlimit.');
+            }
+            const crc = checksum(bytes);
+            const header = new Uint8Array(30 + nameBytes.length);
+            const h = new DataView(header.buffer);
+            h.setUint32(0, 0x04034b50, true);
+            h.setUint16(4, 20, true);   // ZIP-Version
+            h.setUint16(6, 0x0800, true); // UTF-8-Dateinamen
+            h.setUint16(8, 0, true);    // keine Kompression
+            h.setUint16(10, dosTime, true);
+            h.setUint16(12, dosDate, true);
+            h.setUint32(14, crc, true);
+            h.setUint32(18, bytes.length, true);
+            h.setUint32(22, bytes.length, true);
+            h.setUint16(26, nameBytes.length, true);
+            header.set(nameBytes, 30);
+            local.push(header, bytes);
+
+            const record = new Uint8Array(46 + nameBytes.length);
+            const v = new DataView(record.buffer);
+            v.setUint32(0, 0x02014b50, true);
+            v.setUint16(4, 20, true);
+            v.setUint16(6, 20, true);
+            v.setUint16(8, 0x0800, true);
+            v.setUint16(10, 0, true);
+            v.setUint16(12, dosTime, true);
+            v.setUint16(14, dosDate, true);
+            v.setUint32(16, crc, true);
+            v.setUint32(20, bytes.length, true);
+            v.setUint32(24, bytes.length, true);
+            v.setUint16(28, nameBytes.length, true);
+            v.setUint32(42, offset, true);
+            record.set(nameBytes, 46);
+            central.push(record);
+            offset += header.length + bytes.length;
+            centralSize += record.length;
+        }
+        if (offset + centralSize + 22 > 0xffffffff) {
+            throw new Error('ZIP-Datei ist zu groß.');
+        }
+        const end = new Uint8Array(22);
+        const e = new DataView(end.buffer);
+        e.setUint32(0, 0x06054b50, true);
+        e.setUint16(8, entries.length, true);
+        e.setUint16(10, entries.length, true);
+        e.setUint32(12, centralSize, true);
+        e.setUint32(16, offset, true);
+        return new Blob([...local, ...central, end], {type: 'application/zip'});
+    }
+
+    function downloadBatchBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
 
     // ============================================================
     // BUTTON
@@ -190,7 +773,7 @@
     // EXPORT
     // ============================================================
 
-    async function exportArticle(withComments, setStatus) {
+    async function exportArticle(withComments, setStatus, options) {
 
         const embedImages = true;
 
@@ -303,10 +886,11 @@
                 withComments
             });
 
-        downloadHtml(
-            html,
-            makeFilename(title)
-        );
+        const filename = makeFilename(title);
+        if (!options || options.download !== false) {
+            downloadHtml(html, filename);
+        }
+        return {html, filename, title};
     }
 
 
