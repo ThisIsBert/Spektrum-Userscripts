@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spektrum CMS – Autorenansicht exportieren
 // @namespace    https://www.spektrum.de/
-// @version      0.3.9
+// @version      0.3.10
 // @description  Exportiert Artikel mit eingebetteten Bildern, optionaler Kommentarfunktion und PDF-Druckansicht.
 // @match        https://www.spektrum.de/sixcms/detail.php*
 // @match        https://www.spektrum.de/sixcms/admin/content*
@@ -17,7 +17,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '0.3.9';
+    const VERSION = '0.3.10';
 
     const FONT_BASE =
         'https://static.spektrum.de/js_css/assets/fonts/custom/';
@@ -84,26 +84,67 @@
         host.id = 'sdw-batch-controls';
         const shadow = host.attachShadow({mode: 'open'});
         const style = document.createElement('style');
-        style.textContent =
-            ':host{all:initial;position:fixed;z-index:2147483647;left:12px;bottom:12px;' +
-            'max-width:calc(100vw - 24px);width:360px;font:13px/1.45 Arial,sans-serif;' +
-            'color-scheme:light}' +
-            '.box{box-sizing:border-box;padding:12px 14px;background:#fff;color:#222;' +
-            'border:2px solid #235b6c;border-radius:8px;box-shadow:0 3px 16px #0005}' +
-            'strong{font-size:15px;color:#222}p{margin:5px 0;color:#444}' +
+        style.textContent = 
+            ':host{all:initial;position:fixed;z-index:2147483647;left:12px;top:12px;' +
+            'font:13px/1.45 Arial,sans-serif;color-scheme:light}' +
+            ':host([data-collapsed="true"]) .box{display:none}' +
+            ':host([data-collapsed="false"]) .mini{display:none}' +
+            '.mini{width:27px;height:27px}' +
+            '.mini button{box-sizing:border-box;width:27px;height:27px;padding:0;' +
+            'border:1px solid #8b9296;border-radius:6px;background:#ebeff1;' +
+            'color:#36434b;opacity:.54;box-shadow:none;font:17px Arial,sans-serif;' +
+            'cursor:grab;touch-action:none;user-select:none;transition:opacity .15s}' +
+            '.mini button:hover,.mini button:focus-visible{opacity:1;background:#fff}' +
+            '.mini button:active{cursor:grabbing}' +
+            '.box{box-sizing:border-box;width:360px;max-width:calc(100vw - 16px);' +
+            'max-height:calc(100vh - 16px);overflow:auto;padding:12px 14px;' +
+            'background:#fff;color:#222;border:2px solid #235b6c;border-radius:8px;' +
+            'box-shadow:0 3px 16px #0005}' +
+            '.header{display:flex;gap:6px;justify-content:space-between;align-items:center;' +
+            'cursor:grab;touch-action:none;user-select:none;padding-bottom:2px}' +
+            '.header:active{cursor:grabbing}' +
+            '.header strong{font-size:15px;color:#222}' +
+            '.header .collapse{width:26px;height:26px;padding:0;background:#f3f5f6;' +
+            'color:#304e5c;border:1px solid #aebdc4;border-radius:4px;' +
+            'font:bold 20px Arial,sans-serif;line-height:20px;cursor:pointer}' +
+            '.header .collapse:hover{background:#e0edf3}' +
+            'p{margin:5px 0;color:#444}' +
             'label{display:flex;align-items:center;gap:5px;margin:9px 0;cursor:pointer}' +
             'input{accent-color:#235b6c}' +
             '.actions{display:flex;flex-wrap:wrap;gap:7px}' +
-            'button{font:600 13px Arial,sans-serif;padding:9px 11px;border-radius:5px;' +
-            'border:1px solid #235b6c;background:#235b6c;color:#fff;cursor:pointer}' +
-            'button[disabled]{opacity:.5;cursor:wait}' +
-            'button.secondary{background:#fff;color:#235b6c}' +
+            '.actions button{font:600 13px Arial,sans-serif;padding:9px 11px;' +
+            'border-radius:5px;border:1px solid #235b6c;' +
+            'background:#235b6c;color:#fff;cursor:pointer}' +
+            '.actions button[disabled]{opacity:.5;cursor:wait}' +
+            '.actions button.secondary{background:#fff;color:#235b6c}' +
             '.status{margin-top:9px;font-size:12px;max-height:125px;overflow:auto;' +
             'white-space:pre-wrap;overflow-wrap:anywhere;color:#333}';
+
+        const mini = document.createElement('div');
+        mini.className = 'mini';
+        const miniButton = document.createElement('button');
+        miniButton.type = 'button';
+        miniButton.textContent = '▤';
+        miniButton.setAttribute('aria-label',
+            'Autorenansichten öffnen – Symbol ziehen, um es zu verschieben');
+        miniButton.title = 'Autorenansichten öffnen · Zum Verschieben ziehen';
+        mini.appendChild(miniButton);
+
         const box = document.createElement('div');
         box.className = 'box';
+        const header = document.createElement('div');
+        header.className = 'header';
+        header.title = 'Bedienfeld durch Ziehen verschieben';
         const heading = document.createElement('strong');
         heading.textContent = 'Autorenansichten als ZIP';
+        const collapseButton = document.createElement('button');
+        collapseButton.className = 'collapse';
+        collapseButton.type = 'button';
+        collapseButton.textContent = '−';
+        collapseButton.title = 'Bedienfeld einklappen';
+        collapseButton.setAttribute('aria-label', 'Bedienfeld einklappen');
+        header.append(heading, collapseButton);
+
         const subtitle = document.createElement('p');
         subtitle.textContent = 'Alle Treffer der aktuellen CMS-Suche, auch über mehrere Seiten.';
         const label = document.createElement('label');
@@ -126,9 +167,114 @@
         status.className = 'status';
         status.setAttribute('role', 'status');
         status.textContent = 'Bereit. Das CMS bleibt während des Exports geöffnet.';
-        box.append(heading, subtitle, label, actions, status);
-        shadow.append(style, box);
+        box.append(header, subtitle, label, actions, status);
+        shadow.append(style, mini, box);
         document.body.appendChild(host);
+
+        // Position und Klappzustand bleiben auch nach einem CMS-Neuladen erhalten.
+        const storageKey = 'sdw-autorenansicht-batch-panel-v1';
+        let saved = {};
+        try {
+            const value = JSON.parse(localStorage.getItem(storageKey));
+            if (value && typeof value === 'object') saved = value;
+        } catch (_) { /* Speicher kann durch Browserrichtlinien gesperrt sein. */ }
+
+        const initialX = Number.isFinite(saved.x) ? saved.x : 12;
+        const initialY = Number.isFinite(saved.y) ? saved.y :
+            Math.max(8, window.innerHeight - 330);
+        host.style.left = initialX + 'px';
+        host.style.top = initialY + 'px';
+
+        function clampPosition() {
+            const rect = host.getBoundingClientRect();
+            const x = Math.min(Math.max(8, rect.left),
+                Math.max(8, window.innerWidth - rect.width - 8));
+            const y = Math.min(Math.max(8, rect.top),
+                Math.max(8, window.innerHeight - rect.height - 8));
+            host.style.left = x + 'px';
+            host.style.top = y + 'px';
+        }
+
+        function saveLayout() {
+            try {
+                localStorage.setItem(storageKey, JSON.stringify({
+                    x: parseFloat(host.style.left),
+                    y: parseFloat(host.style.top),
+                    collapsed: host.dataset.collapsed === 'true'
+                }));
+            } catch (_) { /* Ohne Speicherung weiterhin frei beweglich. */ }
+        }
+
+        function setCollapsed(value) {
+            host.dataset.collapsed = String(value);
+            miniButton.setAttribute('aria-expanded', String(!value));
+            miniButton.setAttribute('aria-controls', 'sdw-batch-panel');
+            clampPosition();
+            saveLayout();
+        }
+
+        box.id = 'sdw-batch-panel';
+        setCollapsed(saved.collapsed === true);
+        collapseButton.addEventListener('click', () => setCollapsed(true));
+
+        // Verschieben über die Kopfzeile oder das kleine Symbol.
+        // Kurzes Antippen des Symbols klappt das Bedienfeld auf.
+        function enableDragging(handle, opensOnTap) {
+            let drag = null;
+            handle.addEventListener('pointerdown', event => {
+                if (event.button !== 0 || (event.target.closest('button') &&
+                    event.target !== miniButton)) return;
+                const rect = host.getBoundingClientRect();
+                drag = {
+                    id: event.pointerId,
+                    x: event.clientX,
+                    y: event.clientY,
+                    left: rect.left,
+                    top: rect.top,
+                    moved: false
+                };
+                handle.setPointerCapture(event.pointerId);
+                event.preventDefault();
+            });
+
+            handle.addEventListener('pointermove', event => {
+                if (!drag || drag.id !== event.pointerId) return;
+                const dx = event.clientX - drag.x;
+                const dy = event.clientY - drag.y;
+                if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+                drag.moved = true;
+                const width = host.getBoundingClientRect().width;
+                const height = host.getBoundingClientRect().height;
+                const left = Math.min(Math.max(8, drag.left + dx),
+                    Math.max(8, window.innerWidth - width - 8));
+                const top = Math.min(Math.max(8, drag.top + dy),
+                    Math.max(8, window.innerHeight - height - 8));
+                host.style.left = left + 'px';
+                host.style.top = top + 'px';
+            });
+
+            handle.addEventListener('pointerup', event => {
+                if (!drag || drag.id !== event.pointerId) return;
+                const moved = drag.moved;
+                drag = null;
+                if (handle.hasPointerCapture(event.pointerId)) {
+                    handle.releasePointerCapture(event.pointerId);
+                }
+                if (moved) saveLayout();
+                else if (opensOnTap) setCollapsed(false);
+            });
+            handle.addEventListener('pointercancel', () => { drag = null; });
+        }
+        enableDragging(miniButton, true);
+        enableDragging(header, false);
+        // Tastaturbedienung (Enter/Leertaste) erzeugt kein pointerup.
+        miniButton.addEventListener('click', event => {
+            if (event.detail === 0) setCollapsed(false);
+        });
+        window.addEventListener('resize', () => {
+            clampPosition();
+            saveLayout();
+        });
 
         let cancelled = false;
         cancelButton.addEventListener('click', () => {
