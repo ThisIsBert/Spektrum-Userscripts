@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Spektrum CMS – Autorenansicht exportieren
 // @namespace    https://www.spektrum.de/
-// @version      0.3.8
+// @version      0.3.9
 // @description  Exportiert Artikel mit eingebetteten Bildern, optionaler Kommentarfunktion und PDF-Druckansicht.
 // @match        https://www.spektrum.de/sixcms/detail.php*
-// @match        https://www.spektrum.de/sixcms/admin/content/list.php*
+// @match        https://www.spektrum.de/sixcms/admin/content*
 // @grant        GM_xmlhttpRequest
 // @connect      static.spektrum.de
 // @connect      spektrum.de
@@ -17,7 +17,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '0.3.8';
+    const VERSION = '0.3.9';
 
     const FONT_BASE =
         'https://static.spektrum.de/js_css/assets/fonts/custom/';
@@ -55,8 +55,9 @@
         }
     ];
 
-    if (location.pathname === '/sixcms/admin/content/list.php') {
-        initBatchList();
+    if (document.getElementById('id6AdminFrameListFrame') &&
+        document.getElementById('id6AdminFrameDetailFrame')) {
+        initBatchDashboard();
         return;
     }
 
@@ -64,283 +65,436 @@
         return;
     }
 
-    if (new URLSearchParams(location.search).get('sdw_batch') === '1' &&
-        window.parent !== window) {
-        initBatchResponder();
-    } else {
-        createExportButton();
-    }
+    initBatchResponder();
+    createExportButton();
 
 
     // ============================================================
-    // STAPEL-EXPORT AUS DER CMS-ERGEBNISLISTE
+    // STAPEL-EXPORT AUS DER ZWEI-FRAME-CMS-ANSICHT
     // ============================================================
 
-    function initBatchList() {
-        function mount() {
-            const list = document.querySelector('ul.cs6AdminListResultBlock');
-            if (!list) return false;
-            if (document.getElementById('sdw-batch-toolbar')) return true;
+    function initBatchDashboard() {
+        if (document.getElementById('sdw-batch-controls')) return;
 
-            const rows = [];
-            list.querySelectorAll('li.cs6AdminListResultElement').forEach(li => {
-                const source = li.querySelector('a.cs6AdminFallbackLink[href]');
-                if (!source) return;
-                const url = new URL(source.href, location.href);
-                const id = url.searchParams.get('id');
-                const areaId = url.searchParams.get('area_id');
-                if (!id || !/^\d+$/.test(id) || !areaId) return;
+        const listFrame = document.getElementById('id6AdminFrameListFrame');
+        const detailFrame = document.getElementById('id6AdminFrameDetailFrame');
+        if (!listFrame || !detailFrame) return;
 
-                const titleLink = li.querySelector(
-                    '.article-details .title a, .cs6AdminListResultEntry a[href*="/sixcms/admin/content/switch.php"]'
-                );
-                const title = (titleLink?.textContent || 'Eintrag ' + id).trim();
-                const wrapper = document.createElement('label');
-                wrapper.className = 'sdw-batch-row';
-                wrapper.title = 'Für den HTML-Sammelexport auswählen';
-                const check = document.createElement('input');
-                check.type = 'checkbox';
-                check.className = 'sdw-batch-pick';
-                // Onlineartikel automatisch vorselektieren; andere Eintragstypen bleiben wählbar.
-                check.checked = areaId === '590';
-                wrapper.append(check, document.createTextNode(' Export'));
-                wrapper.addEventListener('click', event => event.stopPropagation());
-                wrapper.addEventListener('keydown', event => event.stopPropagation());
-                (li.querySelector('.cs6AdminListResultInnerShell') || li).prepend(wrapper);
-                rows.push({id, areaId, title, check});
-            });
+        const host = document.createElement('div');
+        host.id = 'sdw-batch-controls';
+        const shadow = host.attachShadow({mode: 'open'});
+        const style = document.createElement('style');
+        style.textContent =
+            ':host{all:initial;position:fixed;z-index:2147483647;left:12px;bottom:12px;' +
+            'max-width:calc(100vw - 24px);width:360px;font:13px/1.45 Arial,sans-serif;' +
+            'color-scheme:light}' +
+            '.box{box-sizing:border-box;padding:12px 14px;background:#fff;color:#222;' +
+            'border:2px solid #235b6c;border-radius:8px;box-shadow:0 3px 16px #0005}' +
+            'strong{font-size:15px;color:#222}p{margin:5px 0;color:#444}' +
+            'label{display:flex;align-items:center;gap:5px;margin:9px 0;cursor:pointer}' +
+            'input{accent-color:#235b6c}' +
+            '.actions{display:flex;flex-wrap:wrap;gap:7px}' +
+            'button{font:600 13px Arial,sans-serif;padding:9px 11px;border-radius:5px;' +
+            'border:1px solid #235b6c;background:#235b6c;color:#fff;cursor:pointer}' +
+            'button[disabled]{opacity:.5;cursor:wait}' +
+            'button.secondary{background:#fff;color:#235b6c}' +
+            '.status{margin-top:9px;font-size:12px;max-height:125px;overflow:auto;' +
+            'white-space:pre-wrap;overflow-wrap:anywhere;color:#333}';
+        const box = document.createElement('div');
+        box.className = 'box';
+        const heading = document.createElement('strong');
+        heading.textContent = 'Autorenansichten als ZIP';
+        const subtitle = document.createElement('p');
+        subtitle.textContent = 'Alle Treffer der aktuellen CMS-Suche, auch über mehrere Seiten.';
+        const label = document.createElement('label');
+        const withComments = document.createElement('input');
+        withComments.type = 'checkbox';
+        withComments.checked = true;
+        label.append(withComments, document.createTextNode(' Mit Kommentarfunktion'));
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        const startButton = document.createElement('button');
+        startButton.type = 'button';
+        startButton.textContent = 'Gesamte Suchliste exportieren';
+        const cancelButton = document.createElement('button');
+        cancelButton.type = 'button';
+        cancelButton.className = 'secondary';
+        cancelButton.textContent = 'Abbrechen';
+        cancelButton.disabled = true;
+        actions.append(startButton, cancelButton);
+        const status = document.createElement('div');
+        status.className = 'status';
+        status.setAttribute('role', 'status');
+        status.textContent = 'Bereit. Das CMS bleibt während des Exports geöffnet.';
+        box.append(heading, subtitle, label, actions, status);
+        shadow.append(style, box);
+        document.body.appendChild(host);
 
-            if (!rows.length) return false;
-
-            const style = document.createElement('style');
-            style.textContent =
-                '#sdw-batch-toolbar{position:sticky;top:0;z-index:1000;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px;background:#253847!important;color:#fff!important;border:2px solid #6196b1;font:14px Arial,sans-serif}' +
-                '#sdw-batch-toolbar button{background:#fff!important;color:#17364a!important;border:1px solid #7798aa;border-radius:4px;padding:7px 10px;font:600 13px Arial,sans-serif;cursor:pointer}' +
-                '#sdw-batch-toolbar button:disabled{opacity:.55;cursor:wait}' +
-                '#sdw-batch-toolbar label{color:#fff!important;display:inline-flex;align-items:center;gap:4px}' +
-                '#sdw-batch-status{flex-basis:100%;font-size:12px;white-space:normal;line-height:1.4}' +
-                '.sdw-batch-row{display:inline-flex;align-items:center;gap:2px;padding:4px 8px;margin:3px 7px 3px 3px;background:#dbe7ee!important;color:#182d39!important;border-radius:4px;font:600 12px Arial,sans-serif;cursor:pointer}' +
-                '.sdw-batch-row input{margin:0;accent-color:#235b6c}';
-            document.head.appendChild(style);
-
-            const toolbar = document.createElement('div');
-            toolbar.id = 'sdw-batch-toolbar';
-            const chooseAll = document.createElement('button');
-            chooseAll.type = 'button';
-            chooseAll.textContent = 'Alle auswählen';
-            const chooseNone = document.createElement('button');
-            chooseNone.type = 'button';
-            chooseNone.textContent = 'Keine auswählen';
-            const commentsLabel = document.createElement('label');
-            const comments = document.createElement('input');
-            comments.type = 'checkbox';
-            comments.checked = true;
-            commentsLabel.append(comments, document.createTextNode(' Kommentare'));
-            const exportButton = document.createElement('button');
-            exportButton.type = 'button';
-            exportButton.textContent = 'Auswahl als eine HTML-Datei exportieren';
-            const count = document.createElement('span');
-            const status = document.createElement('div');
-            status.id = 'sdw-batch-status';
-            status.textContent = 'Die Auswahl bezieht sich auf die aktuell angezeigte CMS-Ergebnisseite.';
-            const updateCount = () => {
-                count.textContent = rows.filter(row => row.check.checked).length + ' ausgewählt';
-            };
-            rows.forEach(row => row.check.addEventListener('change', updateCount));
-            chooseAll.addEventListener('click', () => {
-                rows.forEach(row => { row.check.checked = true; });
-                updateCount();
-            });
-            chooseNone.addEventListener('click', () => {
-                rows.forEach(row => { row.check.checked = false; });
-                updateCount();
-            });
-            toolbar.append(chooseAll, chooseNone, commentsLabel, exportButton, count, status);
-            list.before(toolbar);
-            updateCount();
-
-            exportButton.addEventListener('click', async () => {
-                const selected = rows.filter(row => row.check.checked);
-                if (!selected.length) {
-                    status.textContent = 'Bitte mindestens einen Artikel auswählen.';
-                    return;
-                }
-                exportButton.disabled = true;
-                chooseAll.disabled = true;
-                chooseNone.disabled = true;
-                comments.disabled = true;
-                rows.forEach(row => { row.check.disabled = true; });
-                const results = [];
-                const failures = [];
-                try {
-                    for (let index = 0; index < selected.length; index++) {
-                        const row = selected[index];
-                        const prefix = (index + 1) + '/' + selected.length + ': ' + row.title;
-                        status.textContent = prefix + ' – Vorschau wird geöffnet …';
-                        try {
-                            const exported = await exportBatchPreview(row, comments.checked,
-                                step => { status.textContent = prefix + ' – ' + step; });
-                            results.push(exported);
-                        } catch (error) {
-                            console.warn('[Autorenansicht Batch]', row.id, error);
-                            failures.push(row.title + ' (' + (error?.message || error) + ')');
-                        }
-                    }
-                    if (!results.length) {
-                        throw new Error('Kein Artikel ließ sich exportieren. Bitte prüfen, ob die CMS-Vorschau im Browser aufrufbar ist.');
-                    }
-                    status.textContent = 'Erzeuge HTML-Sammeldatei …';
-                    downloadHtml(buildCollectionHtml(results),
-                        'Spektrum_Autorenansichten_' + results.length + '_Artikel.html');
-                    status.textContent = results.length + ' Artikel gespeichert.' +
-                        (failures.length ? ' Fehlgeschlagen: ' + failures.join(' | ') : '');
-                } catch (error) {
-                    status.textContent = 'Export fehlgeschlagen: ' + (error?.message || error);
-                } finally {
-                    exportButton.disabled = false;
-                    chooseAll.disabled = false;
-                    chooseNone.disabled = false;
-                    comments.disabled = false;
-                    rows.forEach(row => { row.check.disabled = false; });
-                }
-            });
-            return true;
-        }
-
-        if (mount()) return;
-        const observer = new MutationObserver(() => {
-            if (mount()) observer.disconnect();
+        let cancelled = false;
+        cancelButton.addEventListener('click', () => {
+            cancelled = true;
+            cancelButton.disabled = true;
+            status.textContent = 'Abbruch angefordert. Der laufende Artikel wird noch fertiggestellt.';
         });
-        observer.observe(document.documentElement, {childList: true, subtree: true});
+
+        startButton.addEventListener('click', async () => {
+            cancelled = false;
+            startButton.disabled = true;
+            withComments.disabled = true;
+            cancelButton.disabled = false;
+            const successes = [];
+            const failures = [];
+            try {
+                status.textContent = 'Ermittle sämtliche Seiten der aktuellen CMS-Suchliste …';
+                const items = await collectBatchItems(listFrame, message => {
+                    status.textContent = message;
+                }, () => cancelled);
+                if (!items.length) throw new Error('Die Suchliste enthält keine exportierbaren Einträge.');
+                status.textContent = items.length + ' Treffer gefunden. Starte Export …';
+
+                for (let index = 0; index < items.length; index++) {
+                    if (cancelled) break;
+                    const item = items[index];
+                    const prefix = (index + 1) + '/' + items.length + ': ' + item.title;
+                    status.textContent = prefix + '\nLade Artikelvorschau …';
+                    try {
+                        const exported = await exportViaCmsPreview(
+                            detailFrame, item, withComments.checked,
+                            phase => { status.textContent = prefix + '\n' + phase; }
+                        );
+                        const uniqueName = item.id + '_' + exported.filename;
+                        successes.push({name: uniqueName, content: exported.html});
+                    } catch (error) {
+                        console.warn('[Autorenansicht Batch]', item.id, error);
+                        failures.push(item.id + ' ' + item.title + ': ' +
+                            (error?.message || String(error)));
+                    }
+                }
+
+                if (!successes.length) {
+                    throw new Error('Kein Artikel konnte exportiert werden. ' +
+                        failures.slice(0, 3).join(' | '));
+                }
+                if (failures.length || cancelled) {
+                    successes.push({
+                        name: 'Exportprotokoll.txt',
+                        content: 'Spektrum Autorenansichten – Batch-Export\n' +
+                            'Erfolgreich: ' + (successes.length) + ' von ' + items.length + '\n' +
+                            (cancelled ? 'Vorgang vorzeitig abgebrochen.\n' : '') +
+                            (failures.length ? '\nFehler:\n' + failures.join('\n') : '')
+                    });
+                }
+                const htmlCount = successes.filter(entry => entry.name.endsWith('.html')).length;
+                status.textContent = 'Packe ' + htmlCount + ' HTML-Dateien in das ZIP-Archiv …';
+                const zip = makeStoredZip(successes);
+                downloadBatchBlob(zip, 'Spektrum_Autorenansichten_' + htmlCount + '_Artikel.zip');
+                status.textContent = htmlCount + ' HTML-Dateien als ZIP gespeichert.' +
+                    (failures.length ? '\n' + failures.length +
+                        ' fehlgeschlagen; Details in Exportprotokoll.txt.' : '') +
+                    (cancelled ? '\nExport vorzeitig beendet.' : '');
+            } catch (error) {
+                status.textContent = 'Export nicht abgeschlossen: ' +
+                    (error?.message || String(error));
+                console.error('[Autorenansicht Batch]', error);
+            } finally {
+                startButton.disabled = false;
+                withComments.disabled = false;
+                cancelButton.disabled = true;
+            }
+        });
     }
 
-    function exportBatchPreview(row, withComments, setStatus) {
+    async function collectBatchItems(listFrame, setStatus, isCancelled) {
+        let listDoc;
+        let listUrl;
+        try {
+            listDoc = listFrame.contentDocument;
+            listUrl = new URL(listFrame.contentWindow.location.href);
+        } catch (_) {
+            throw new Error('Auf das linke Suchlisten-Frame kann nicht zugegriffen werden.');
+        }
+        if (!listDoc || !listDoc.querySelector('ul.cs6AdminListResultBlock')) {
+            throw new Error('Links ist derzeit keine geladene CMS-Suchergebnisliste sichtbar.');
+        }
+        const firstLink = listDoc.querySelector(
+            '#id6AdminResultInfo_jumpbar a[data-page~="first_page"]'
+        );
+        const firstUrl = firstLink
+            ? new URL(firstLink.getAttribute('href'), listUrl)
+            : new URL(listUrl.href);
+        if (!firstLink) firstUrl.searchParams.set('skip', '0');
+
+        const seenPages = new Set();
+        const seenItems = new Map();
+        let pageUrl = firstUrl;
+        let pageNumber = 0;
+        while (pageUrl && pageNumber < 2000) {
+            if (isCancelled()) break;
+            if (seenPages.has(pageUrl.href)) throw new Error('Seitennavigation enthält eine Schleife.');
+            seenPages.add(pageUrl.href);
+            pageNumber++;
+            let page;
+            if (pageUrl.href === listUrl.href) {
+                page = listDoc;
+            } else {
+                const response = await fetch(pageUrl.href, {
+                    credentials: 'same-origin', cache: 'no-store'
+                });
+                if (!response.ok) {
+                    throw new Error('Ergebnisseite ' + pageNumber +
+                        ' konnte nicht geladen werden (HTTP ' + response.status + ').');
+                }
+                page = new DOMParser().parseFromString(await response.text(), 'text/html');
+            }
+            const elements = [...page.querySelectorAll('li.cs6AdminListResultElement')];
+            if (!elements.length) {
+                throw new Error('Keine Treffer auf Ergebnisseite ' + pageNumber +
+                    ' – möglicherweise ist die CMS-Sitzung abgelaufen.');
+            }
+            for (const li of elements) {
+                const fallback = li.querySelector('a.cs6AdminFallbackLink[href]');
+                const opener = li.querySelector(
+                    '.cs6AdminPseudoLink[data-href], a[href*="/sixcms/admin/content/switch.php"]'
+                );
+                let entryUrl;
+                try {
+                    entryUrl = new URL(fallback?.getAttribute('href') ||
+                        opener?.getAttribute('data-href') ||
+                        opener?.getAttribute('href'), pageUrl);
+                } catch (_) { continue; }
+                const id = entryUrl.searchParams.get('id');
+                const areaId = entryUrl.searchParams.get('area_id');
+                if (!id || !/^\d+$/.test(id) || !areaId) continue;
+                const titleLink = li.querySelector(
+                    '.article-details .title a, .cs6AdminListResultEntry ' +
+                    'a[href*="/sixcms/admin/content/switch.php"]'
+                );
+                const title = (titleLink?.textContent || 'Eintrag ' + id)
+                    .trim().replace(/\s+/g, ' ');
+                if (!seenItems.has(id)) {
+                    seenItems.set(id, {id, areaId, title});
+                }
+            }
+            setStatus('Suchliste: ' + seenItems.size +
+                ' Treffer auf ' + pageNumber + ' Ergebnisseite(n) erfasst …');
+            const nextLink = page.querySelector(
+                '#id6AdminResultInfo_jumpbar a[data-page~="next_page"]'
+            );
+            pageUrl = nextLink
+                ? new URL(nextLink.getAttribute('href'), pageUrl) : null;
+        }
+        if (pageUrl && !isCancelled()) {
+            throw new Error('Zu viele Ergebnisseiten. Vorgang vorsichtshalber beendet.');
+        }
+        return [...seenItems.values()];
+    }
+
+    function exportViaCmsPreview(detailFrame, item, withComments, setStatus) {
         return new Promise((resolve, reject) => {
-            const iframe = document.createElement('iframe');
-            iframe.style.cssText = 'position:fixed;left:-12000px;top:0;width:1200px;height:900px;border:0;pointer-events:none';
-            iframe.setAttribute('aria-hidden', 'true');
-            const token = Date.now().toString(36) + Math.random().toString(36).slice(2);
-            let finished = false;
-            const timer = setTimeout(() => finish(new Error('Zeitüberschreitung beim Artikel-Export.')), 180000);
-            function cleanup() {
+            let done = false;
+            let requested = false;
+            const token = Date.now().toString(36) +
+                Math.random().toString(36).slice(2);
+            const timer = setTimeout(() => {
+                finish(new Error('Die Vorschau oder der Export hat nicht rechtzeitig geantwortet.'));
+            }, 180000);
+
+            function finish(error, result) {
+                if (done) return;
+                done = true;
                 clearTimeout(timer);
                 window.removeEventListener('message', onMessage);
-                iframe.remove();
-            }
-            function finish(error, result) {
-                if (finished) return;
-                finished = true;
-                cleanup();
                 if (error) reject(error);
                 else resolve(result);
             }
+
+            function isWithinDetail(source) {
+                try {
+                    let current = source;
+                    for (let depth = 0; depth < 12; depth++) {
+                        if (current === detailFrame.contentWindow) return true;
+                        if (!current || current === window ||
+                            current === current.parent) return false;
+                        current = current.parent;
+                    }
+                } catch (_) { return false; }
+                return false;
+            }
+
             function onMessage(event) {
-                if (event.origin !== location.origin || event.source !== iframe.contentWindow) return;
+                if (done || event.origin !== location.origin ||
+                    !isWithinDetail(event.source)) return;
                 const data = event.data;
-                if (!data || data.token !== token) return;
-                if (data.type === 'sdw-batch-ready') {
-                    iframe.contentWindow.postMessage({
-                        type: 'sdw-batch-export-request', token, withComments
+                if (!data || data.articleId !== item.id) return;
+                if (data.type === 'sdw-batch-ready' && !requested) {
+                    requested = true;
+                    setStatus('Vorschau geladen; erstelle HTML-Datei …');
+                    event.source.postMessage({
+                        type: 'sdw-batch-export-request',
+                        articleId: item.id, token, withComments
                     }, location.origin);
-                } else if (data.type === 'sdw-batch-progress') {
+                } else if (data.token === token && data.type === 'sdw-batch-progress') {
                     setStatus(data.status);
-                } else if (data.type === 'sdw-batch-result') {
-                    finish(null, {title: data.title || row.title, html: data.html});
-                } else if (data.type === 'sdw-batch-error') {
-                    finish(new Error(data.error || 'Unbekannter Fehler'));
+                } else if (data.token === token && data.type === 'sdw-batch-result') {
+                    if (typeof data.html !== 'string' || !data.html.startsWith('<!doctype html>')) {
+                        finish(new Error('Ungültiges HTML aus der Artikelvorschau erhalten.'));
+                    } else {
+                        finish(null, {title: data.title, filename: data.filename, html: data.html});
+                    }
+                } else if (data.token === token && data.type === 'sdw-batch-error') {
+                    finish(new Error(data.error || 'Vorschau meldet einen unbekannten Fehler.'));
                 }
             }
             window.addEventListener('message', onMessage);
-            const url = new URL('/sixcms/detail.php', location.origin);
-            url.searchParams.set('id', row.id);
-            url.searchParams.set('area_id', row.areaId);
-            url.searchParams.set('sdw_batch', '1');
-            url.searchParams.set('sdw_batch_token', token);
-            iframe.src = url.href;
-            document.body.appendChild(iframe);
+
+            // Identisch zur üblichen CMS-Detailansicht: rechte Seite lädt
+            // switch.php mit ausgewählter Artikel-ID und Preview-Tab.
+            const url = new URL('/sixcms/admin/content/switch.php', location.origin);
+            const current = new URL(detailFrame.getAttribute('src'), location.href);
+            const list = document.getElementById('id6AdminFrameListFrame');
+            let listUrl = null;
+            try { listUrl = new URL(list.contentWindow.location.href); } catch (_) {}
+            const widget = listUrl?.searchParams.get('widget') ||
+                current.searchParams.get('widget');
+            if (widget) url.searchParams.set('widget', widget);
+            url.searchParams.set('id', item.id);
+            url.searchParams.set('area_id', item.areaId);
+            url.searchParams.set('show', 'detail');
+            url.searchParams.set('show_card', 'preview');
+            detailFrame.src = url.href;
         });
     }
 
+    // Auf der eingebetteten Artikelvorschau anmelden und den bestehenden
+    // Einzelexport auf Anforderung an das äußere CMS-Fenster zurückgeben.
     function initBatchResponder() {
-        const params = new URLSearchParams(location.search);
-        const token = params.get('sdw_batch_token');
-        if (!token) return;
-        let running = false;
+        if (window.top === window) return;
+        const articleId = new URLSearchParams(location.search).get('id');
+        if (!articleId) return;
+        let busy = false;
         window.addEventListener('message', async event => {
             const data = event.data;
-            if (event.source !== window.parent || event.origin !== location.origin ||
-                data?.type !== 'sdw-batch-export-request' || data.token !== token || running) return;
-            running = true;
+            if (event.origin !== location.origin || event.source !== window.top ||
+                data?.type !== 'sdw-batch-export-request' ||
+                data.articleId !== articleId || busy) return;
+            busy = true;
             try {
                 const exported = await exportArticle(Boolean(data.withComments), status => {
-                    window.parent.postMessage({type: 'sdw-batch-progress', token, status}, location.origin);
+                    window.top.postMessage({
+                        type: 'sdw-batch-progress', articleId, token: data.token, status
+                    }, location.origin);
                 }, {download: false});
-                window.parent.postMessage({
-                    type: 'sdw-batch-result', token, html: exported.html, title: exported.title
+                window.top.postMessage({
+                    type: 'sdw-batch-result', articleId, token: data.token,
+                    title: exported.title, filename: exported.filename, html: exported.html
                 }, location.origin);
             } catch (error) {
-                window.parent.postMessage({
-                    type: 'sdw-batch-error', token, error: error?.message || String(error)
+                window.top.postMessage({
+                    type: 'sdw-batch-error', articleId, token: data.token,
+                    error: error?.message || String(error)
                 }, location.origin);
+            } finally {
+                busy = false;
             }
         });
-        window.parent.postMessage({type: 'sdw-batch-ready', token}, location.origin);
+        window.top.postMessage({type: 'sdw-batch-ready', articleId}, location.origin);
     }
 
-    // In der Sammeldatei bleibt jede Autorenansicht ein eigenständiges
-    // Dokument. So funktionieren auch die bestehenden Kommentar-/PDF-Skripte.
-    function buildCollectionHtml(entries) {
-        const intro = '<!doctype html><html lang="de"><head><meta charset="utf-8">' +
-            '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-            '<meta name="color-scheme" content="light">' +
-            '<title>Spektrum – Autorenansichten</title><style>' +
-            '*{box-sizing:border-box}html,body{height:100%;margin:0}' +
-            'body{font:15px/1.5 Arial,sans-serif;color:#222;background:#f5f6f7}' +
-            '.collection{display:grid;grid-template-columns:270px minmax(0,1fr);height:100vh}' +
-            'nav{overflow:auto;background:#fff;border-right:1px solid #bbb;padding:16px}' +
-            'nav h1{font-size:19px;line-height:1.25;margin:0 0 6px}' +
-            'nav p{font-size:12px;color:#666;margin:0 0 12px}' +
-            'nav button{display:block;width:100%;text-align:left;padding:10px;margin:3px 0;' +
-            'border:1px solid #ddd;border-radius:5px;background:#fff;color:#222;cursor:pointer;' +
-            'font:14px/1.4 Arial,sans-serif;overflow-wrap:anywhere}' +
-            'nav button[aria-current="true"]{background:#e3f0f5;border-color:#235b6c;font-weight:bold}' +
-            '#sdw-batch-viewer{min-width:0;min-height:0;position:relative}' +
-            '#sdw-batch-viewer iframe{width:100%;height:100%;border:0;background:#fff}' +
-            '#sdw-batch-viewer iframe[hidden]{display:none}' +
-            '@media(max-width:700px){.collection{grid-template-columns:1fr;grid-template-rows:170px minmax(0,1fr)}' +
-            'nav{border-right:0;border-bottom:1px solid #bbb;padding:10px}nav button{display:inline-block;width:auto;max-width:250px;margin-right:5px}}' +
-            '</style></head><body><div class="collection"><nav><h1>Autorenansichten</h1>' +
-            '<p>' + entries.length + ' Artikel · Zur Auswahl einen Titel anklicken.</p>';
-        const items = entries.map((entry, index) =>
-            '<button type="button" data-sdw-index="' + index + '">' +
-            (index + 1) + '. ' + escapeHtml(entry.title) + '</button>'
-        ).join('');
-        const templates = entries.map((entry, index) =>
-            '<template id="sdw-batch-document-' + index + '">' + escapeHtml(entry.html) + '</template>'
-        ).join('');
-        const runtime = '(' + function collectionRuntime() {
-            'use strict';
-            const viewer = document.getElementById('sdw-batch-viewer');
-            const buttons = Array.from(document.querySelectorAll('nav [data-sdw-index]'));
-            const frames = new Map();
-            function show(index) {
-                buttons.forEach((button, number) =>
-                    button.setAttribute('aria-current', number === index ? 'true' : 'false'));
-                for (const [key, frame] of frames) frame.hidden = key !== index;
-                if (!frames.has(index)) {
-                    const template = document.getElementById('sdw-batch-document-' + index);
-                    const frame = document.createElement('iframe');
-                    frame.title = buttons[index].textContent;
-                    frame.srcdoc = template.content.textContent;
-                    viewer.appendChild(frame);
-                    frames.set(index, frame);
-                }
+    // ZIP ohne externe Bibliothek. Methode 0 (STORE) ist breit kompatibel.
+    // Bilder sind bereits als Daten-URLs in den HTML-Dateien enthalten.
+    function makeStoredZip(entries) {
+        if (!entries.length || entries.length > 65535) {
+            throw new Error('Ungültige Anzahl von ZIP-Dateien.');
+        }
+        const encoder = new TextEncoder();
+        const crcTable = new Uint32Array(256);
+        for (let n = 0; n < 256; n++) {
+            let c = n;
+            for (let k = 0; k < 8; k++) {
+                c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
             }
-            buttons.forEach((button, index) => button.addEventListener('click', () => show(index)));
-            show(0);
-        }.toString() + ')();';
-        return intro + items + '</nav><main id="sdw-batch-viewer"></main></div>' +
-            templates + '<script>' + runtime.replace(/<\/script/gi, '<\\/script') + '</' + 'script></body></html>';
+            crcTable[n] = c >>> 0;
+        }
+        function checksum(bytes) {
+            let crc = 0xffffffff;
+            for (const byte of bytes) {
+                crc = crcTable[(crc ^ byte) & 255] ^ (crc >>> 8);
+            }
+            return (crc ^ 0xffffffff) >>> 0;
+        }
+        const now = new Date();
+        const dosTime = (now.getHours() << 11) |
+            (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2);
+        const dosDate = ((Math.max(1980, now.getFullYear()) - 1980) << 9) |
+            ((now.getMonth() + 1) << 5) | now.getDate();
+        const local = [];
+        const central = [];
+        let offset = 0;
+        let centralSize = 0;
+        for (const entry of entries) {
+            const nameBytes = encoder.encode(entry.name);
+            const bytes = encoder.encode(entry.content);
+            if (nameBytes.length > 65535 || bytes.length > 0xffffffff ||
+                offset + bytes.length + nameBytes.length + 30 > 0xffffffff) {
+                throw new Error('ZIP-Datei überschreitet das unterstützte Größenlimit.');
+            }
+            const crc = checksum(bytes);
+            const header = new Uint8Array(30 + nameBytes.length);
+            const h = new DataView(header.buffer);
+            h.setUint32(0, 0x04034b50, true);
+            h.setUint16(4, 20, true);   // ZIP-Version
+            h.setUint16(6, 0x0800, true); // UTF-8-Dateinamen
+            h.setUint16(8, 0, true);    // keine Kompression
+            h.setUint16(10, dosTime, true);
+            h.setUint16(12, dosDate, true);
+            h.setUint32(14, crc, true);
+            h.setUint32(18, bytes.length, true);
+            h.setUint32(22, bytes.length, true);
+            h.setUint16(26, nameBytes.length, true);
+            header.set(nameBytes, 30);
+            local.push(header, bytes);
+
+            const record = new Uint8Array(46 + nameBytes.length);
+            const v = new DataView(record.buffer);
+            v.setUint32(0, 0x02014b50, true);
+            v.setUint16(4, 20, true);
+            v.setUint16(6, 20, true);
+            v.setUint16(8, 0x0800, true);
+            v.setUint16(10, 0, true);
+            v.setUint16(12, dosTime, true);
+            v.setUint16(14, dosDate, true);
+            v.setUint32(16, crc, true);
+            v.setUint32(20, bytes.length, true);
+            v.setUint32(24, bytes.length, true);
+            v.setUint16(28, nameBytes.length, true);
+            v.setUint32(42, offset, true);
+            record.set(nameBytes, 46);
+            central.push(record);
+            offset += header.length + bytes.length;
+            centralSize += record.length;
+        }
+        if (offset + centralSize + 22 > 0xffffffff) {
+            throw new Error('ZIP-Datei ist zu groß.');
+        }
+        const end = new Uint8Array(22);
+        const e = new DataView(end.buffer);
+        e.setUint32(0, 0x06054b50, true);
+        e.setUint16(8, entries.length, true);
+        e.setUint16(10, entries.length, true);
+        e.setUint32(12, centralSize, true);
+        e.setUint32(16, offset, true);
+        return new Blob([...local, ...central, end], {type: 'application/zip'});
+    }
+
+    function downloadBatchBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
     }
 
     // ============================================================
